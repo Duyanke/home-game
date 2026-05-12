@@ -2,6 +2,7 @@ import express from 'express';
 import cors from 'cors';
 import { createServer } from 'http';
 import { Server } from 'socket.io';
+import { join } from 'path';
 import { initSqlJsEngine, initDatabase } from './db/database';
 
 const app = express();
@@ -18,7 +19,8 @@ app.use(cors());
 app.use(express.json());
 
 // 静态文件（生产环境托管前端构建结果）
-app.use(express.static('../client/dist'));
+const clientDistPath = join(__dirname, '../../client/dist');
+app.use(express.static(clientDistPath));
 
 // 基础路由
 app.get('/api/health', (req, res) => {
