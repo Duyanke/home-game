@@ -206,18 +206,27 @@ function handleTaskUpdate(io: Server, socket: Socket, msg: SocketMessage<TaskUpd
   const task = getTaskById(taskId);
 
   if (task) {
-    // 如果任务完成，给执行者加积分
+    // 如果任务完成，给执行者加积分并检查成长
     if (status === 'completed' && task.executor_id) {
       const member = getMemberById(task.executor_id);
       if (member) {
-        const newPoints = member.total_points + task.points;
-        updateMemberPoints(task.executor_id, newPoints);
+        // 使用成长逻辑模块处理积分和成长
+        const growthResult = addPointsAndCheckGrowth(task.executor_id, task.points);
 
         // 广播积分更新
         broadcastToFamily(io, member.family_id, 'MEMBER_POINTS_UPDATED', {
           memberId: task.executor_id,
-          newPoints
+          newPoints: growthResult.newTotalPoints
         });
+
+        // 如果阶段提升，广播成长消息
+        if (growthResult.stageChanged) {
+          broadcastToFamily(io, member.family_id, 'BEAST_STAGE_UP', {
+            memberId: task.executor_id,
+            newStage: growthResult.newStage,
+            newSkills: growthResult.newSkills
+          });
+        }
       }
     }
 
