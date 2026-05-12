@@ -91,3 +91,17 @@ export function getUnlockedSkillsCount(stage: number): number {
   if (stage >= 2) return 2;
   return 1;
 }
+
+// 更新神兽所有属性（战斗后同步）
+export function updateBeastStats(
+  beastId: string,
+  hp: number,
+  atk: number,
+  def: number,
+  spd: number,
+  ep: number
+): void {
+  runSql(`
+    UPDATE beasts SET hp = ?, atk = ?, def = ?, spd = ?, ep = ? WHERE beast_id = ?
+  `, [hp, atk, def, spd, ep, beastId]);
+}
