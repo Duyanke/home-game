@@ -42,6 +42,19 @@ import {
   getDuelsByMember,
   updateDuelResult
 } from '../models/duel';
+import {
+  initBattle,
+  getActiveBattle,
+  endBattle,
+  executeAttack,
+  executeSkill,
+  executeDefend,
+  checkBattleEnd,
+  endRound
+} from '../game/battle-engine';
+import { determineOrder, BattleBeastState, BattleResult } from '../game/battle-state';
+import { addPointsAndCheckGrowth, DUEL_REWARDS } from '../game/growth';
+import { DuelResult } from '../models/duel';
 
 // 存储成员与 Socket 的映射
 const memberSocketMap: Map<string, Socket> = new Map();
@@ -239,12 +252,28 @@ function handleDuelAccept(io: Server, socket: Socket, msg: SocketMessage<{ duelI
 
   const duel = getDuelById(duelId);
   if (duel) {
-    // 广播决斗开始
-    broadcastToDuelists(io, duel, 'DUEL_STARTED', {
-      duelId,
-      challengerId: duel.challenger_id,
-      defenderId: duel.defender_id
-    });
+    try {
+      // 初始化战斗状态
+      const { challengerState, defenderState } = initBattle(duelId, duel.challenger_id, duel.defender_id);
+
+      // 确定行动顺序
+      const order = determineOrder(challengerState, defenderState);
+
+      // 广播决斗开始，包含双方状态和行动顺序
+      broadcastToDuelists(io, duel, 'DUEL_STARTED', {
+        duelId,
+        challengerId: duel.challenger_id,
+        defenderId: duel.defender_id,
+        challengerState,
+        defenderState,
+        firstActor: order.first,
+        currentRound: 1,
+        waitingFor: order.first
+      });
+    } catch (error) {
+      const errorMsg = error instanceof Error ? error.message : 'Failed to init battle';
+      socket.emit('ERROR', { type: 'ERROR', payload: { message: errorMsg }, timestamp: Date.now() });
+    }
   }
 }
 
@@ -268,19 +297,80 @@ function handleDuelReject(io: Server, socket: Socket, msg: SocketMessage<{ duelI
   }
 }
 
-// DUEL_ACTION 处理：决斗操作（简化版，完整战斗逻辑在计划3）
+// DUEL_ACTION 处理：决斗操作
 function handleDuelAction(io: Server, socket: Socket, msg: SocketMessage<DuelActionPayload>): void {
   const { duelId, memberId, action, skillId } = msg.payload;
 
-  // 广播操作给双方
   const duel = getDuelById(duelId);
-  if (duel) {
-    broadcastToDuelists(io, duel, 'DUEL_ACTION_RECEIVED', {
+  if (!duel) {
+    socket.emit('ERROR', { type: 'ERROR', payload: { message: 'Duel not found' }, timestamp: Date.now() });
+    return;
+  }
+
+  // 确定行动方
+  const actor: 'challenger' | 'defender' = memberId === duel.challenger_id ? 'challenger' : 'defender';
+
+  let actionResult: any;
+
+  try {
+    switch (action) {
+      case 'attack':
+        actionResult = executeAttack(duelId, actor);
+        break;
+      case 'skill':
+        if (!skillId) throw new Error('Skill ID required for skill action');
+        actionResult = executeSkill(duelId, actor, skillId);
+        break;
+      case 'defend':
+        actionResult = executeDefend(duelId, actor);
+        break;
+      case 'surrender':
+        // 投降处理
+        const surrenderResult: BattleResult = {
+          duelId,
+          winner: actor === 'challenger' ? 'defender' : 'challenger',
+          winnerId: actor === 'challenger' ? duel.defender_id : duel.challenger_id,
+          finalRound: getActiveBattle(duelId)?.currentRound || 0,
+          challengerFinalHp: 0,
+          defenderFinalHp: 0
+        };
+        handleBattleEnd(io, duel, surrenderResult, true);
+        return;
+    }
+
+    // 广播行动结果
+    broadcastToDuelists(io, duel, 'DUEL_ACTION_RESULT', {
       duelId,
-      memberId,
-      action,
-      skillId
+      action: actionResult,
+      actor: memberId
     });
+
+    // 检查战斗结束
+    const battleEnd = checkBattleEnd(duelId);
+    if (battleEnd) {
+      handleBattleEnd(io, duel, battleEnd, false);
+    } else {
+      // 获取当前战斗状态
+      const battle = getActiveBattle(duelId);
+      if (battle) {
+        endRound(duelId);
+
+        // 重新确定行动顺序
+        const order = determineOrder(battle.challengerState, battle.defenderState);
+
+        // 广播回合结束和新回合开始
+        broadcastToDuelists(io, duel, 'ROUND_ENDED', {
+          duelId,
+          currentRound: battle.currentRound,
+          challengerState: battle.challengerState,
+          defenderState: battle.defenderState,
+          nextFirstActor: order.first
+        });
+      }
+    }
+  } catch (error) {
+    const errorMsg = error instanceof Error ? error.message : 'Action failed';
+    socket.emit('ERROR', { type: 'ERROR', payload: { message: errorMsg }, timestamp: Date.now() });
   }
 }
 
@@ -318,6 +408,68 @@ function handleDisconnect(io: Server, socket: Socket): void {
   }
 
   console.log('Client disconnected:', socket.id);
+}
+
+// 处理战斗结束
+function handleBattleEnd(io: Server, duel: any, result: BattleResult, isSurrender: boolean): void {
+  // 更新决斗结果
+  const duelResult: DuelResult = result.winner === 'challenger' ? 'challenger_win'
+    : result.winner === 'defender' ? 'defender_win'
+    : 'draw';
+
+  updateDuelResult(duel.duel_id, duelResult, result.winnerId, result.finalRound);
+
+  // 计算奖励
+  const winnerId = result.winnerId;
+
+  if (winnerId) {
+    // 获胜奖励
+    const reward = isSurrender ? DUEL_REWARDS.surrender : DUEL_REWARDS.win;
+    const growthResult = addPointsAndCheckGrowth(winnerId, reward);
+
+    // 广播获胜和成长更新
+    broadcastToDuelists(io, duel, 'DUEL_ENDED', {
+      duelId: duel.duel_id,
+      result: duelResult,
+      winnerId,
+      winnerReward: reward,
+      growthUpdate: growthResult
+    });
+
+    // 广播积分更新到家庭
+    const winnerMember = getMemberById(winnerId);
+    if (winnerMember) {
+      broadcastToFamily(io, winnerMember.family_id, 'MEMBER_POINTS_UPDATED', {
+        memberId: winnerId,
+        newPoints: growthResult.newTotalPoints
+      });
+
+      // 如果阶段提升，广播成长消息
+      if (growthResult.stageChanged) {
+        broadcastToFamily(io, winnerMember.family_id, 'BEAST_STAGE_UP', {
+          memberId: winnerId,
+          newStage: growthResult.newStage,
+          newSkills: growthResult.newSkills
+        });
+      }
+    }
+  } else {
+    // 平局
+    const drawReward = DUEL_REWARDS.draw;
+    const challengerGrowth = addPointsAndCheckGrowth(duel.challenger_id, drawReward);
+    const defenderGrowth = addPointsAndCheckGrowth(duel.defender_id, drawReward);
+
+    broadcastToDuelists(io, duel, 'DUEL_ENDED', {
+      duelId: duel.duel_id,
+      result: 'draw',
+      reward: drawReward,
+      challengerGrowth,
+      defenderGrowth
+    });
+  }
+
+  // 清理战斗状态
+  endBattle(duel.duel_id);
 }
 
 // 辅助函数：广播到家庭房间
