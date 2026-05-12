@@ -5,6 +5,7 @@ import { Server } from 'socket.io';
 import { join } from 'path';
 import { initSqlJsEngine, initDatabase } from './db/database';
 import { registerSocketHandlers } from './socket/handlers';
+import routes from './routes';
 
 const app = express();
 const httpServer = createServer(app);
@@ -23,7 +24,10 @@ app.use(express.json());
 const clientDistPath = join(__dirname, '../../client/dist');
 app.use(express.static(clientDistPath));
 
-// 基础路由
+// 注册 REST API 路由
+app.use('/api', routes);
+
+// 基础健康检查
 app.get('/api/health', (req, res) => {
   res.json({ status: 'ok', timestamp: new Date().toISOString() });
 });
