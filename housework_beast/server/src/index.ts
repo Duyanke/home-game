@@ -4,6 +4,7 @@ import { createServer } from 'http';
 import { Server } from 'socket.io';
 import { join } from 'path';
 import { initSqlJsEngine, initDatabase } from './db/database';
+import { registerSocketHandlers } from './socket/handlers';
 
 const app = express();
 const httpServer = createServer(app);
@@ -27,14 +28,8 @@ app.get('/api/health', (req, res) => {
   res.json({ status: 'ok', timestamp: new Date().toISOString() });
 });
 
-// Socket.IO 连接处理
-io.on('connection', (socket) => {
-  console.log('Client connected:', socket.id);
-
-  socket.on('disconnect', () => {
-    console.log('Client disconnected:', socket.id);
-  });
-});
+// 注册 Socket.IO 事件处理器
+registerSocketHandlers(io);
 
 const PORT = process.env.PORT || 3000;
 
