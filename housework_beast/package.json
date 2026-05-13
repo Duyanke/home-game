@@ -12,5 +12,8 @@
     "build": "npm run build --workspace=client",
     "start": "npm run start --workspace=server",
     "install:all": "npm install"
+  },
+  "devDependencies": {
+    "playwright": "^1.60.0"
   }
 }
