@@ -30,7 +30,7 @@ import Loading from '@/components/common/Loading.vue'
 import ConnectionStatus from '@/components/common/ConnectionStatus.vue'
 import { useFamilyStore } from '@/stores/family'
 import { useBeastStore } from '@/stores/beast'
-import { connectSocket, getSocket } from '@/services/socket'
+import { connectSocket, getSocket, rejoinFamily } from '@/services/socket'
 
 const familyStore = useFamilyStore()
 const beastStore = useBeastStore()
@@ -89,12 +89,7 @@ const onWelcomeSuccess = () => {
 
 // 设置 Socket 事件监听
 const setupSocketEvents = (sock: ReturnType<typeof connectSocket>) => {
-  sock.on('connect', () => {
-    isConnected.value = true
-    isReconnecting.value = false
-    isLoading.value = false
-    requestSync(sock)
-  })
+  // 注意：connect 事件在 initSocketConnection 中单独处理（需要发送 REJOIN）
 
   sock.on('disconnect', () => {
     isConnected.value = false
@@ -104,11 +99,22 @@ const setupSocketEvents = (sock: ReturnType<typeof connectSocket>) => {
   sock.on('reconnect', () => {
     isReconnecting.value = false
     isConnected.value = true
-    requestSync(sock)
+    // 重连后再次发送 REJOIN
+    if (familyStore.memberId && familyStore.familyId) {
+      rejoinFamily(familyStore.memberId, familyStore.familyId)
+    }
   })
 
   sock.on('reconnect_attempt', () => {
     isReconnecting.value = true
+  })
+
+  // 监听 REJOIN_ACK
+  sock.on('REJOIN_ACK', (data: { payload: { success: boolean; familyId?: string; familyCode?: string; memberId?: string } }) => {
+    if (data.payload.success) {
+      // REJOIN 成功后请求同步数据
+      requestSync(sock)
+    }
   })
 
   // 监听广播事件
@@ -188,6 +194,18 @@ const initSocketConnection = () => {
 
   setupSocketEvents(socket)
 
+  // 在连接时发送 REJOIN 恢复登录状态
+  socket.on('connect', () => {
+    isConnected.value = true
+    isReconnecting.value = false
+    isLoading.value = false
+
+    // 如果有保存的家庭信息，发送 REJOIN
+    if (familyStore.memberId && familyStore.familyId) {
+      rejoinFamily(familyStore.memberId, familyStore.familyId)
+    }
+  })
+
   // 监听网络状态
   window.addEventListener('online', () => {
     isConnected.value = navigator.onLine
@@ -217,6 +235,7 @@ onUnmounted(() => {
     socket.off('disconnect')
     socket.off('reconnect')
     socket.off('reconnect_attempt')
+    socket.off('REJOIN_ACK')
     socket.off('BROADCAST')
     socket.off('SYNC_DATA')
   }

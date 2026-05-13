@@ -25,16 +25,20 @@
 </template>
 
 <script setup lang="ts">
-import { ref, onMounted, onUnmounted } from 'vue'
+import { ref, watch, onMounted, onUnmounted } from 'vue'
 import { useRouter } from 'vue-router'
 import BackHeader from '@/components/common/BackHeader.vue'
 import BeastCard from '@/components/common/BeastCard.vue'
 import Loading from '@/components/common/Loading.vue'
 import { useToastStore } from '@/stores/toast'
-import { sendMessage, getSocket } from '@/services/socket'
+import { useFamilyStore } from '@/stores/family'
+import { useBeastStore } from '@/stores/beast'
+import { sendMessage, getSocket, rejoinFamily } from '@/services/socket'
 
 const router = useRouter()
 const toast = useToastStore()
+const familyStore = useFamilyStore()
+const beastStore = useBeastStore()
 const selectedType = ref<string | null>(null)
 const isConfirming = ref(false)
 
@@ -55,21 +59,36 @@ const confirmSelect = () => {
     toast.warning('请先选择一只神兽')
     return
   }
+
+  // 确保 socket 映射正确
+  const socket = getSocket()
+  if (socket && socket.connected && familyStore.memberId && familyStore.familyId) {
+    // 先发送 REJOIN 确保 socket 映射正确
+    rejoinFamily(familyStore.memberId, familyStore.familyId)
+  }
+
   isConfirming.value = true
   sendMessage('SELECT_BEAST', { beastType: selectedType.value })
 }
 
+// 监听神兽状态变化，成功后跳转
+watch(
+  () => beastStore.myBeast,
+  (newBeast) => {
+    if (newBeast && isConfirming.value) {
+      isConfirming.value = false
+      router.push('/beast')
+    }
+  }
+)
+
 onMounted(() => {
   const socket = getSocket()
   if (socket) {
-    socket.on('BEAST_SELECTED', (data: { payload: { success: boolean } }) => {
+    // 监听错误消息
+    socket.on('ERROR', (data: { payload: { message: string } }) => {
       isConfirming.value = false
-      if (data.payload.success) {
-        toast.success('神兽选择成功!')
-        router.push('/beast')
-      } else {
-        toast.error('选择失败，请重试')
-      }
+      toast.error(data.payload.message)
     })
   }
 })
@@ -77,7 +96,7 @@ onMounted(() => {
 onUnmounted(() => {
   const socket = getSocket()
   if (socket) {
-    socket.off('BEAST_SELECTED')
+    socket.off('ERROR')
   }
 })
 </script>

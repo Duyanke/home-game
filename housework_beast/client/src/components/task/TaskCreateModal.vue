@@ -58,7 +58,9 @@
 <script setup lang="ts">
 import { ref } from 'vue'
 import { useTaskStore } from '@/stores/task'
+import { useFamilyStore } from '@/stores/family'
 import { useToastStore } from '@/stores/toast'
+import { getSocket, rejoinFamily } from '@/services/socket'
 import { validateTaskName, validateTaskPoints } from '@/utils/validators'
 
 const emit = defineEmits<{
@@ -67,6 +69,7 @@ const emit = defineEmits<{
 }>()
 
 const taskStore = useTaskStore()
+const familyStore = useFamilyStore()
 const toast = useToastStore()
 const taskName = ref('')
 const taskPoints = ref(10)
@@ -86,6 +89,13 @@ const createTask = () => {
   if (!pointsResult.valid) {
     toast.error(pointsResult.errors[0])
     return
+  }
+
+  // 确保 socket 映射正确
+  const socket = getSocket()
+  if (socket && socket.connected && familyStore.memberId && familyStore.familyId) {
+    // 先发送 REJOIN 确保 socket 映射正确
+    rejoinFamily(familyStore.memberId, familyStore.familyId)
   }
 
   isSubmitting.value = true

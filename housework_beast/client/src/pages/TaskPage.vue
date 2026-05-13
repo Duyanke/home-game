@@ -91,6 +91,11 @@ onMounted(() => {
       taskStore.syncTasks(tasks)
     })
 
+    // 监听错误消息
+    socket.on('ERROR', (data: { payload: { message: string } }) => {
+      console.error('Socket error:', data.payload.message)
+    })
+
     // 监听广播事件
     socket.on('BROADCAST', (data: { payload: { event: string; data: any } }) => {
       const { event, data: eventData } = data.payload
@@ -138,6 +143,7 @@ onUnmounted(() => {
   const socket = getSocket()
   if (socket) {
     socket.off('SYNC_DATA')
+    socket.off('ERROR')
     socket.off('BROADCAST')
   }
 })

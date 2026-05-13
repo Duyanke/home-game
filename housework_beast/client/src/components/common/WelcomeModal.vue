@@ -124,17 +124,26 @@ const handleSubmit = async () => {
     errorMsg.value = data.payload.message
   })
 
-  // 发送 HELLO 事件（匹配后端）
-  const codeToSend = mode.value === 'create' ? '' : familyCode.value.trim().toUpperCase()
+  // 确保连接已建立后发送 HELLO 事件
+  const sendHello = () => {
+    const codeToSend = mode.value === 'create' ? '' : familyCode.value.trim().toUpperCase()
 
-  socket.emit('HELLO', {
-    type: 'HELLO',
-    payload: {
-      familyCode: codeToSend,
-      memberName: memberName.value.trim()
-    },
-    timestamp: Date.now()
-  })
+    socket.emit('HELLO', {
+      type: 'HELLO',
+      payload: {
+        familyCode: codeToSend,
+        memberName: memberName.value.trim()
+      },
+      timestamp: Date.now()
+    })
+  }
+
+  // 如果已连接，立即发送；否则等待连接
+  if (socket.connected) {
+    sendHello()
+  } else {
+    socket.once('connect', sendHello)
+  }
 }
 </script>
 
