@@ -144,10 +144,11 @@ function handleHello(io: Server, socket: Socket, msg: SocketMessage<HelloPayload
   // 加入家庭房间
   socket.join(`family:${family.family_id}`);
 
-  // 发送确认
+  // 发送确认（包含家庭码）
   const ackPayload: HelloAckPayload = {
     success: true,
     familyId: family.family_id,
+    familyCode: family.family_code,
     memberId: member.member_id
   };
 

@@ -24,6 +24,7 @@ export interface HelloPayload {
 export interface HelloAckPayload {
   success: boolean;
   familyId?: string;
+  familyCode?: string;
   memberId?: string;
   message?: string;
 }
