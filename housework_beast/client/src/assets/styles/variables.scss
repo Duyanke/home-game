@@ -1,0 +1,51 @@
+// variables.scss - 颜色变量定义
+
+// ===== 规格主色 =====
+$color-gold: #D4AF37;
+$color-red: #C41E3A;
+$color-green: #2E8B57;
+$color-dark: #1A1A2E;
+
+// ===== 金色系扩展色阶 =====
+$color-gold-light: #F5E6B8;
+$color-gold-base: #D4AF37;
+$color-gold-dark: #A68A2A;
+
+// ===== 红色系扩展色阶 =====
+$color-red-light: #E85A6B;
+$color-red-base: #C41E3A;
+$color-red-dark: #8B1428;
+
+// ===== 青色系扩展色阶 =====
+$color-green-light: #4CAF7A;
+$color-green-base: #2E8B57;
+$color-green-dark: #1E5A3A;
+
+// ===== 玄黑系扩展色阶 =====
+$color-dark-light: #2D2D4A;
+$color-dark-base: #1A1A2E;
+$color-dark-deep: #0D0D1A;
+
+// ===== 神兽元素配色 =====
+$color-element-wood: #4CAF50;   // 青龙-木
+$color-element-fire: #FF5722;   // 朱雀-火
+$color-element-metal: #9E9E9E;  // 白虎-金
+$color-element-water: #2196F3;  // 玄武-水
+$color-element-light: #FFC107;  // 麒麟-光
+
+// ===== 文字色 =====
+$color-text-primary: #FFFFFF;
+$color-text-secondary: #888888;
+$color-text-accent: #D4AF37;
+
+// ===== 状态色 =====
+$color-success: #4CAF50;
+$color-warning: #FFC107;
+$color-error: #F44336;
+$color-info: #2196F3;
+
+// ===== 尺寸变量 =====
+$nav-height: 56px;
+$header-height: 48px;
+$card-radius: 12px;
+$button-radius: 8px;

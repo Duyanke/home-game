@@ -1,7 +1,19 @@
+<template>
+  <router-view v-slot="{ Component, route }">
+    <component :is="Component" :key="route.path" />
+  </router-view>
+</template>
+
 <script setup lang="ts">
-import HelloWorld from './components/HelloWorld.vue'
+// 根组件，路由直接渲染页面组件
+// BottomNav 由各页面自行控制显示
 </script>
 
-<template>
-  <HelloWorld />
-</template>
+<style lang="scss">
+@use '@/assets/styles/variables' as *;
+
+#app {
+  background: $color-dark-base;
+  min-height: 100vh;
+}
+</style>
