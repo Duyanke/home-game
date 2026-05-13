@@ -68,6 +68,16 @@ export const useBeastStore = defineStore('beast', {
       if (this.myBeast?.memberId === memberId) {
         this.myBeast.stats = stats
       }
+    },
+
+    updateBeastSkills(memberId: string, skills: string[]) {
+      const beast = this.allBeasts.find(b => b.memberId === memberId)
+      if (beast) {
+        beast.skills = skills
+      }
+      if (this.myBeast?.memberId === memberId) {
+        this.myBeast.skills = skills
+      }
     }
   }
 })

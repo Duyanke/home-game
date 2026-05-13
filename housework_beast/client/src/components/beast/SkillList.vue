@@ -43,12 +43,27 @@ const beastSkills: Record<string, string[]> = {
   kirin: ['祥瑞之光', '祥瑞赐福', '圣光治愈', '麒麟降临']
 }
 
-const skillUnlockStage: Record<string, number> = {
-  '风刃斩': 1, '御风护盾': 2, '龙吟': 3, '天龙破': 4,
-  '烈焰冲击': 1, '火羽盾': 2, '涅槃': 3, '凤舞九天': 4,
-  '虎啸': 1, '坚岩壁垒': 2, '猛虎扑': 3, '白虎杀': 4,
-  '玄武盾': 1, '寒冰刺': 2, '长寿': 3, '玄武之力': 4,
-  '祥瑞之光': 1, '祥瑞赐福': 2, '圣光治愈': 3, '麒麟降临': 4
+const skillData: Record<string, { id: string; name: string; unlockStage: number }> = {
+  '风刃斩': { id: 'wind_slash', name: '风刃斩', unlockStage: 1 },
+  '御风护盾': { id: 'wind_shield', name: '御风护盾', unlockStage: 2 },
+  '龙吟': { id: 'dragon_roar', name: '龙吟', unlockStage: 3 },
+  '天龙破': { id: 'dragon_breath', name: '天龙破', unlockStage: 4 },
+  '烈焰冲击': { id: 'flame_strike', name: '烈焰冲击', unlockStage: 1 },
+  '火羽盾': { id: 'fire_shield', name: '火羽盾', unlockStage: 2 },
+  '涅槃': { id: 'rebirth', name: '涅槃', unlockStage: 3 },
+  '凤舞九天': { id: 'sky_flame', name: '凤舞九天', unlockStage: 4 },
+  '虎啸': { id: 'frost_bite', name: '虎啸', unlockStage: 1 },
+  '坚岩壁垒': { id: 'tiger_roar', name: '坚岩壁垒', unlockStage: 2 },
+  '猛虎扑': { id: 'iron_body', name: '猛虎扑', unlockStage: 3 },
+  '白虎杀': { id: 'tiger_kill', name: '白虎杀', unlockStage: 4 },
+  '玄武盾': { id: 'rock_wall', name: '玄武盾', unlockStage: 1 },
+  '寒冰刺': { id: 'ice_shield', name: '寒冰刺', unlockStage: 2 },
+  '长寿': { id: 'xuanwu_power', name: '长寿', unlockStage: 3 },
+  '玄武之力': { id: 'xuanwu_force', name: '玄武之力', unlockStage: 4 },
+  '祥瑞之光': { id: 'bless_light', name: '祥瑞之光', unlockStage: 1 },
+  '祥瑞赐福': { id: 'holy_heal', name: '祥瑞赐福', unlockStage: 2 },
+  '圣光治愈': { id: 'blessing', name: '圣光治愈', unlockStage: 3 },
+  '麒麟降临': { id: 'kirin_descend', name: '麒麟降临', unlockStage: 4 }
 }
 
 const skills = computed(() => {
@@ -56,10 +71,10 @@ const skills = computed(() => {
   const skillNames = beastSkills[props.beastType] || beastSkills['dragon']
 
   return skillNames.map(skillName => {
-    const unlockStage = skillUnlockStage[skillName] || 1
-    const isLocked = props.currentStage < unlockStage || !props.unlockedSkills.includes(skillName)
+    const skillInfo = skillData[skillName] || { id: skillName, name: skillName, unlockStage: 1 }
+    const isLocked = props.currentStage < skillInfo.unlockStage || !props.unlockedSkills.includes(skillInfo.id)
     return {
-      id: skillName,
+      id: skillInfo.id,
       name: skillName,
       element: elementLabels[element] || '木',
       cost: 20,

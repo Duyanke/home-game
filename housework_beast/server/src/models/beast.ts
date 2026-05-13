@@ -1,5 +1,6 @@
 import { v4 as uuidv4 } from 'uuid';
 import { queryOne, queryAll, runSql } from '../db/database';
+import { BEAST_SKILLS } from '../game/constants';
 
 export type BeastType = 'qinglong' | 'zhuque' | 'baihu' | 'xuanwu' | 'qilin';
 
@@ -32,14 +33,21 @@ function parseBeast(row: any): Beast {
   };
 }
 
+// 获取幼年期初始技能
+function getInitialSkill(beastType: BeastType): string {
+  const skills = BEAST_SKILLS[beastType];
+  return skills && skills.length > 0 ? skills[0].id : '';
+}
+
 export function createBeast(memberId: string, beastType: BeastType): Beast {
   const beastId = uuidv4();
   const baseStats = BEAST_BASE_STATS[beastType];
+  const initialSkill = getInitialSkill(beastType);
 
   runSql(`
     INSERT INTO beasts (beast_id, member_id, beast_type, stage, hp, atk, def, spd, ep, unlocked_skills)
-    VALUES (?, ?, ?, 1, ?, ?, ?, ?, 100, '')
-  `, [beastId, memberId, beastType, baseStats.hp, baseStats.atk, baseStats.def, baseStats.spd]);
+    VALUES (?, ?, ?, 1, ?, ?, ?, ?, 100, ?)
+  `, [beastId, memberId, beastType, baseStats.hp, baseStats.atk, baseStats.def, baseStats.spd, initialSkill]);
 
   return {
     beast_id: beastId,
@@ -51,7 +59,7 @@ export function createBeast(memberId: string, beastType: BeastType): Beast {
     def: baseStats.def,
     spd: baseStats.spd,
     ep: 100,
-    unlocked_skills: []
+    unlocked_skills: [initialSkill]
   };
 }
 

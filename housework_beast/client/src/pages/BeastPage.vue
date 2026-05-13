@@ -140,6 +140,12 @@ onMounted(() => {
   const socket = getSocket()
   if (socket) {
     socket.on('BEAST_STAGE_UP', (data: { payload: { memberId: string; newStage: number; newSkills?: string[] } }) => {
+      // 更新 beastStore 的阶段和技能
+      beastStore.updateBeastStage(data.payload.memberId, data.payload.newStage)
+      if (data.payload.newSkills) {
+        beastStore.updateBeastSkills(data.payload.memberId, data.payload.newSkills)
+      }
+
       if (data.payload.memberId === familyStore.memberId) {
         evolutionData.value = {
           stageName: stageNames[data.payload.newStage] || '成年期',

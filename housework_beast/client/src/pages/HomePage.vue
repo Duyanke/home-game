@@ -187,6 +187,9 @@ const handleBroadcast = (event: string, data: any) => {
     case 'BEAST_STAGE_UP':
       // 神兽成长
       beastStore.updateBeastStage(data.memberId, data.newStage)
+      if (data.newSkills) {
+        beastStore.updateBeastSkills(data.memberId, data.newSkills)
+      }
       break
     case 'BEAST_CREATED':
       // 新神兽创建，重新同步
