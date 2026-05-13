@@ -38,9 +38,14 @@ export function getMemberById(memberId: string): Member | null {
   return row as Member | null;
 }
 
-export function getMembersByFamily(familyId: string): Member[] {
-  const rows = queryAll('SELECT * FROM members WHERE family_id = ?', [familyId]);
-  return rows as Member[];
+export function getMembersByFamily(familyId: string): any[] {
+  const rows = queryAll(`
+    SELECT m.*, b.beast_type
+    FROM members m
+    LEFT JOIN beasts b ON m.member_id = b.member_id
+    WHERE m.family_id = ?
+  `, [familyId]);
+  return rows;
 }
 
 export function updateMemberStatus(memberId: string, status: MemberStatus): void {

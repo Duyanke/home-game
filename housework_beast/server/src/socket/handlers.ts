@@ -4,6 +4,8 @@ import {
   SocketMessage,
   HelloPayload,
   HelloAckPayload,
+  RejoinPayload,
+  RejoinAckPayload,
   SyncRequestPayload,
   SyncDataPayload,
   TaskCreatePayload,
@@ -23,12 +25,14 @@ import {
   getMemberById,
   getMembersByFamily,
   updateMemberStatus,
-  updateMemberPoints
+  updateMemberPoints,
+  updateMemberBeast
 } from '../models/member';
 import {
   createBeast,
   getBeastByMember,
-  getBeastById
+  getBeastById,
+  deleteBeastByMember
 } from '../models/beast';
 import {
   createTask,
@@ -68,6 +72,11 @@ export function registerSocketHandlers(io: Server): void {
     // HELLO: 客户端加入家庭
     socket.on('HELLO', (msg: SocketMessage<HelloPayload>) => {
       handleHello(io, socket, msg);
+    });
+
+    // REJOIN: 恢复登录（重连时使用）
+    socket.on('REJOIN', (msg: SocketMessage<RejoinPayload>) => {
+      handleRejoin(io, socket, msg);
     });
 
     // SYNC_REQUEST: 请求数据同步
@@ -140,6 +149,7 @@ export function registerSocketHandlers(io: Server): void {
 // HELLO 处理：加入家庭
 function handleHello(io: Server, socket: Socket, msg: SocketMessage<HelloPayload>): void {
   const { familyCode, memberName } = msg.payload;
+  console.log('[HELLO] Received from socket:', socket.id, 'familyCode:', familyCode, 'memberName:', memberName);
 
   // 尝试查找现有家庭
   let family = getFamilyByCode(familyCode);
@@ -147,15 +157,19 @@ function handleHello(io: Server, socket: Socket, msg: SocketMessage<HelloPayload
   // 如果家庭不存在，创建新家庭
   if (!family) {
     family = createFamily();
+    console.log('[HELLO] Created new family:', family.family_code);
   }
 
   // 创建成员
   const member = createMember(family.family_id, memberName);
   updateMemberStatus(member.member_id, 'online');
+  console.log('[HELLO] Created member:', member.member_id, 'name:', member.name);
 
   // 存储映射关系
   memberSocketMap.set(member.member_id, socket);
   socketMemberMap.set(socket.id, member.member_id);
+  console.log('[HELLO] socketMemberMap set:', socket.id, '->', member.member_id);
+  console.log('[HELLO] Current socketMemberMap size:', socketMemberMap.size);
 
   // 加入家庭房间
   socket.join(`family:${family.family_id}`);
@@ -173,11 +187,74 @@ function handleHello(io: Server, socket: Socket, msg: SocketMessage<HelloPayload
     payload: ackPayload,
     timestamp: Date.now()
   });
+  console.log('[HELLO] Sent HELLO_ACK to socket:', socket.id);
 
   // 广播新成员加入
   broadcastToFamily(io, family.family_id, 'MEMBER_JOINED', {
     memberId: member.member_id,
     memberName: member.name
+  });
+}
+
+// REJOIN 处理：恢复登录
+function handleRejoin(io: Server, socket: Socket, msg: SocketMessage<RejoinPayload>): void {
+  const { memberId, familyId } = msg.payload;
+  console.log('[REJOIN] Received from socket:', socket.id, 'memberId:', memberId, 'familyId:', familyId);
+
+  // 验证成员是否存在
+  const member = getMemberById(memberId);
+  if (!member) {
+    console.log('[REJOIN] ERROR: member not found');
+    socket.emit('REJOIN_ACK', {
+      type: 'REJOIN_ACK',
+      payload: { success: false, message: '成员不存在' },
+      timestamp: Date.now()
+    });
+    return;
+  }
+
+  // 验证家庭是否存在
+  const family = getFamilyById(familyId);
+  if (!family) {
+    console.log('[REJOIN] ERROR: family not found');
+    socket.emit('REJOIN_ACK', {
+      type: 'REJOIN_ACK',
+      payload: { success: false, message: '家庭不存在' },
+      timestamp: Date.now()
+    });
+    return;
+  }
+
+  // 更新成员状态
+  updateMemberStatus(memberId, 'online');
+
+  // 存储映射关系
+  memberSocketMap.set(memberId, socket);
+  socketMemberMap.set(socket.id, memberId);
+  console.log('[REJOIN] socketMemberMap set:', socket.id, '->', memberId);
+
+  // 加入家庭房间
+  socket.join(`family:${familyId}`);
+
+  // 发送确认
+  const ackPayload: RejoinAckPayload = {
+    success: true,
+    familyId: family.family_id,
+    familyCode: family.family_code,
+    memberId: member.member_id
+  };
+
+  socket.emit('REJOIN_ACK', {
+    type: 'REJOIN_ACK',
+    payload: ackPayload,
+    timestamp: Date.now()
+  });
+  console.log('[REJOIN] Sent REJOIN_ACK to socket:', socket.id);
+
+  // 广播成员上线
+  broadcastToFamily(io, familyId, 'MEMBER_STATUS_UPDATED', {
+    memberId,
+    status: 'online'
   });
 }
 
@@ -208,22 +285,31 @@ function handleSyncRequest(socket: Socket, msg: SocketMessage<SyncRequestPayload
 
 // TASK_CREATE 处理：创建任务
 function handleTaskCreate(io: Server, socket: Socket, msg: SocketMessage<TaskCreatePayload>): void {
+  console.log('[TASK_CREATE] Received from socket:', socket.id);
+  console.log('[TASK_CREATE] Payload:', msg.payload);
+
   const memberId = socketMemberMap.get(socket.id);
+  console.log('[TASK_CREATE] memberId from socketMemberMap:', memberId);
+
   if (!memberId) {
+    console.log('[TASK_CREATE] ERROR: memberId not found in socketMemberMap');
     socket.emit('ERROR', { type: 'ERROR', payload: { message: '未找到成员信息' }, timestamp: Date.now() });
     return;
   }
 
   const member = getMemberById(memberId);
   if (!member) {
+    console.log('[TASK_CREATE] ERROR: member not found in database');
     socket.emit('ERROR', { type: 'ERROR', payload: { message: '成员不存在' }, timestamp: Date.now() });
     return;
   }
 
   const { name, points, isCustom } = msg.payload;
   const familyId = member.family_id;
+  console.log('[TASK_CREATE] Creating task:', name, 'points:', points, 'familyId:', familyId);
 
   const task = createTask(familyId, name, points, memberId, isCustom);
+  console.log('[TASK_CREATE] Created task:', task.task_id);
 
   // 转换为前端格式
   const frontendTask = {
@@ -239,6 +325,7 @@ function handleTaskCreate(io: Server, socket: Socket, msg: SocketMessage<TaskCre
   };
 
   broadcastToFamily(io, familyId, 'TASK_CREATED', frontendTask);
+  console.log('[TASK_CREATE] Broadcasted TASK_CREATED to family:', familyId);
 }
 
 // TASK_UPDATE 处理：更新任务状态
@@ -280,11 +367,15 @@ function handleTaskUpdate(io: Server, socket: Socket, msg: SocketMessage<TaskUpd
 // DUEL_INVITE 处理：发起决斗邀请
 function handleDuelInvite(io: Server, socket: Socket, msg: SocketMessage<DuelInvitePayload>): void {
   const { challengerId, defenderId } = msg.payload;
+  console.log('[DUEL_INVITE] challengerId:', challengerId, 'defenderId:', defenderId);
 
   const duel = createDuel(challengerId, defenderId);
+  console.log('[DUEL_INVITE] Created duel:', duel.duel_id);
 
   // 找到防守方的 socket
   const defenderSocket = memberSocketMap.get(defenderId);
+  console.log('[DUEL_INVITE] defenderSocket found:', !!defenderSocket);
+
   if (defenderSocket) {
     defenderSocket.emit('DUEL_INVITE_RECEIVED', {
       type: 'DUEL_INVITE_RECEIVED',
@@ -295,21 +386,29 @@ function handleDuelInvite(io: Server, socket: Socket, msg: SocketMessage<DuelInv
       },
       timestamp: Date.now()
     });
+    console.log('[DUEL_INVITE] Sent DUEL_INVITE_RECEIVED to defender');
   }
 }
 
 // DUEL_ACCEPT 处理：接受决斗
 function handleDuelAccept(io: Server, socket: Socket, msg: SocketMessage<{ duelId: string; defenderId: string }>): void {
-  const { duelId } = msg.payload;
+  const { duelId, defenderId } = msg.payload;
+  console.log('[DUEL_ACCEPT] duelId:', duelId, 'defenderId:', defenderId);
 
   const duel = getDuelById(duelId);
+  console.log('[DUEL_ACCEPT] duel found:', !!duel);
+
   if (duel) {
     try {
       // 初始化战斗状态
       const { challengerState, defenderState } = initBattle(duelId, duel.challenger_id, duel.defender_id);
+      console.log('[DUEL_ACCEPT] Battle initialized');
+      console.log('[DUEL_ACCEPT] challengerState:', challengerState);
+      console.log('[DUEL_ACCEPT] defenderState:', defenderState);
 
       // 确定行动顺序
       const order = determineOrder(challengerState, defenderState);
+      console.log('[DUEL_ACCEPT] order:', order);
 
       // 广播决斗开始，包含双方状态和行动顺序
       broadcastToDuelists(io, duel, 'DUEL_STARTED', {
@@ -322,8 +421,10 @@ function handleDuelAccept(io: Server, socket: Socket, msg: SocketMessage<{ duelI
         currentRound: 1,
         waitingFor: order.first
       });
+      console.log('[DUEL_ACCEPT] DUEL_STARTED broadcasted');
     } catch (error) {
       const errorMsg = error instanceof Error ? error.message : 'Failed to init battle';
+      console.log('[DUEL_ACCEPT] ERROR:', errorMsg);
       socket.emit('ERROR', { type: 'ERROR', payload: { message: errorMsg }, timestamp: Date.now() });
     }
   }
@@ -351,16 +452,21 @@ function handleDuelReject(io: Server, socket: Socket, msg: SocketMessage<{ duelI
 
 // DUEL_ACTION 处理：决斗操作
 function handleDuelAction(io: Server, socket: Socket, msg: SocketMessage<DuelActionPayload>): void {
+  console.log('[DUEL_ACTION] Received:', msg.payload);
   const { duelId, memberId, action, skillId } = msg.payload;
 
   const duel = getDuelById(duelId);
+  console.log('[DUEL_ACTION] duel found:', !!duel);
+
   if (!duel) {
+    console.log('[DUEL_ACTION] ERROR: Duel not found');
     socket.emit('ERROR', { type: 'ERROR', payload: { message: 'Duel not found' }, timestamp: Date.now() });
     return;
   }
 
   // 确定行动方
   const actor: 'challenger' | 'defender' = memberId === duel.challenger_id ? 'challenger' : 'defender';
+  console.log('[DUEL_ACTION] actor:', actor, 'action:', action);
 
   let actionResult: any;
 
@@ -368,13 +474,16 @@ function handleDuelAction(io: Server, socket: Socket, msg: SocketMessage<DuelAct
     switch (action) {
       case 'attack':
         actionResult = executeAttack(duelId, actor);
+        console.log('[DUEL_ACTION] attack result:', actionResult);
         break;
       case 'skill':
         if (!skillId) throw new Error('Skill ID required for skill action');
         actionResult = executeSkill(duelId, actor, skillId);
+        console.log('[DUEL_ACTION] skill result:', actionResult);
         break;
       case 'defend':
         actionResult = executeDefend(duelId, actor);
+        console.log('[DUEL_ACTION] defend result:', actionResult);
         break;
       case 'surrender':
         // 投降处理
@@ -441,16 +550,24 @@ function handleMemberUpdate(io: Server, socket: Socket, msg: SocketMessage<Membe
   }
 }
 
-// SELECT_BEAST 处理：选择神兽
+// SELECT_BEAST 处理：选择神兽（支持更换）
 function handleSelectBeast(io: Server, socket: Socket, msg: SocketMessage<{ beastType: string; memberId: string }>): void {
+  console.log('[SELECT_BEAST] Received from socket:', socket.id);
+  console.log('[SELECT_BEAST] Payload:', msg.payload);
+  console.log('[SELECT_BEAST] socketMemberMap size:', socketMemberMap.size);
+
   const memberId = socketMemberMap.get(socket.id);
+  console.log('[SELECT_BEAST] memberId from socketMemberMap:', memberId);
+
   if (!memberId) {
+    console.log('[SELECT_BEAST] ERROR: memberId not found in socketMemberMap');
     socket.emit('ERROR', { type: 'ERROR', payload: { message: '未找到成员信息' }, timestamp: Date.now() });
     return;
   }
 
   const member = getMemberById(memberId);
   if (!member) {
+    console.log('[SELECT_BEAST] ERROR: member not found in database');
     socket.emit('ERROR', { type: 'ERROR', payload: { message: '成员不存在' }, timestamp: Date.now() });
     return;
   }
@@ -466,16 +583,22 @@ function handleSelectBeast(io: Server, socket: Socket, msg: SocketMessage<{ beas
 
   const { beastType } = msg.payload;
   const backendType = typeMap[beastType] || beastType;
+  console.log('[SELECT_BEAST] beastType:', beastType, '-> backendType:', backendType);
 
-  // 检查是否已有神兽
+  // 检查是否已有神兽，如果有则删除（支持更换）
   const existingBeast = getBeastByMember(memberId);
   if (existingBeast) {
-    socket.emit('ERROR', { type: 'ERROR', payload: { message: '你已经选择了神兽' }, timestamp: Date.now() });
-    return;
+    console.log('[SELECT_BEAST] Member already has beast, deleting old beast:', existingBeast.beast_id);
+    deleteBeastByMember(memberId);
   }
 
-  // 创建神兽
+  // 创建新神兽
   const beast = createBeast(memberId, backendType as any);
+  console.log('[SELECT_BEAST] Created new beast:', beast.beast_id);
+
+  // 更新成员的神兽关联
+  updateMemberBeast(memberId, beast.beast_id);
+  console.log('[SELECT_BEAST] Updated member beast_id:', memberId, '->', beast.beast_id);
 
   // 发送确认
   socket.emit('BEAST_SELECTED', {
@@ -494,6 +617,7 @@ function handleSelectBeast(io: Server, socket: Socket, msg: SocketMessage<{ beas
     },
     timestamp: Date.now()
   });
+  console.log('[SELECT_BEAST] Sent BEAST_SELECTED to socket:', socket.id);
 
   // 广播神兽创建
   broadcastToFamily(io, member.family_id, 'BEAST_CREATED', {

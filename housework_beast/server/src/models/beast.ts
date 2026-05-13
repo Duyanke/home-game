@@ -105,3 +105,8 @@ export function updateBeastStats(
     UPDATE beasts SET hp = ?, atk = ?, def = ?, spd = ?, ep = ? WHERE beast_id = ?
   `, [hp, atk, def, spd, ep, beastId]);
 }
+
+// 删除神兽（用于更换神兽）
+export function deleteBeastByMember(memberId: string): void {
+  runSql('DELETE FROM beasts WHERE member_id = ?', [memberId]);
+}

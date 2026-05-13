@@ -2,6 +2,8 @@
 export type SocketEventType =
   | 'HELLO'           // 客户端加入家庭
   | 'HELLO_ACK'       // 服务器确认加入
+  | 'REJOIN'          // 恢复登录（重连时使用）
+  | 'REJOIN_ACK'      // 恢复登录确认
   | 'SYNC_REQUEST'    // 请求数据同步
   | 'SYNC_DATA'       // 返回数据快照
   | 'TASK_CREATE'     // 创建任务
@@ -22,6 +24,19 @@ export interface HelloPayload {
 }
 
 export interface HelloAckPayload {
+  success: boolean;
+  familyId?: string;
+  familyCode?: string;
+  memberId?: string;
+  message?: string;
+}
+
+export interface RejoinPayload {
+  memberId: string;
+  familyId: string;
+}
+
+export interface RejoinAckPayload {
   success: boolean;
   familyId?: string;
   familyCode?: string;
