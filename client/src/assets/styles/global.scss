@@ -1,0 +1,122 @@
+// global.scss - 全局样式
+
+@use 'variables' as *;
+@use 'mixins' as *;
+
+// ===== 全局重置 =====
+* {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
+
+html, body {
+  height: 100%;
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  background: $color-dark-base;
+  color: $color-text-primary;
+  -webkit-font-smoothing: antialiased;
+}
+
+#app {
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+}
+
+// ===== 页面布局 =====
+.page-container {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  padding-bottom: $nav-height; // 为底部导航留空间
+  overflow-y: auto;
+}
+
+.page-content {
+  flex: 1;
+  padding: 16px;
+}
+
+// ===== 滚动条样式 =====
+::-webkit-scrollbar {
+  width: 6px;
+}
+
+::-webkit-scrollbar-track {
+  background: $color-dark-deep;
+}
+
+::-webkit-scrollbar-thumb {
+  background: $color-gold-dark;
+  border-radius: 3px;
+}
+
+// ===== 链接样式 =====
+a {
+  color: $color-gold;
+  text-decoration: none;
+
+  &:hover {
+    color: $color-gold-light;
+  }
+}
+
+// ===== 输入框样式 =====
+input, textarea, select {
+  background: $color-dark-light;
+  border: 1px solid $color-dark-light;
+  border-radius: $button-radius;
+  padding: 12px;
+  color: $color-text-primary;
+  width: 100%;
+
+  &:focus {
+    outline: none;
+    border-color: $color-gold;
+  }
+
+  &::placeholder {
+    color: $color-text-secondary;
+  }
+}
+
+// ===== 模态框基础 =====
+.modal-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: rgba($color-dark-deep, 0.8);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1000;
+}
+
+.modal-content {
+  background: $color-dark-light;
+  border-radius: $card-radius;
+  padding: 24px;
+  max-width: 400px;
+  width: 90%;
+}
+
+// ===== 工具类 =====
+.text-center { text-align: center; }
+.text-left { text-align: left; }
+.text-right { text-align: right; }
+
+.flex-1 { flex: 1; }
+.gap-8 { gap: 8px; }
+.gap-16 { gap: 16px; }
+.gap-24 { gap: 24px; }
+
+.mt-8 { margin-top: 8px; }
+.mt-16 { margin-top: 16px; }
+.mb-8 { margin-bottom: 8px; }
+.mb-16 { margin-bottom: 16px; }
+
+.hidden { display: none; }
+.visible { display: block; }
