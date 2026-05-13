@@ -45,15 +45,15 @@ export const useTaskStore = defineStore('task', {
 
   actions: {
     createTask(name: string, points: number, isCustom: boolean) {
-      sendMessage('CREATE_TASK', { name, points, isCustom })
+      sendMessage('TASK_CREATE', { name, points, isCustom })
     },
 
     claimTask(taskId: string) {
-      sendMessage('CLAIM_TASK', { taskId })
+      sendMessage('TASK_CLAIM', { taskId })
     },
 
     completeTask(taskId: string) {
-      sendMessage('COMPLETE_TASK', { taskId })
+      sendMessage('TASK_COMPLETE', { taskId })
     },
 
     confirmTask(taskId: string) {
@@ -62,6 +62,20 @@ export const useTaskStore = defineStore('task', {
 
     syncTasks(tasks: Task[]) {
       this.tasks = tasks
+    },
+
+    addTask(task: Task) {
+      const existing = this.tasks.find(t => t.id === task.id)
+      if (!existing) {
+        this.tasks.push(task)
+      }
+    },
+
+    updateTask(task: Task) {
+      const index = this.tasks.findIndex(t => t.id === task.id)
+      if (index !== -1) {
+        this.tasks[index] = task
+      }
     },
 
     setFilter(filter: TaskFilter) {

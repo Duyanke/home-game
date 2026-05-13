@@ -29,10 +29,11 @@ import BottomNav from '@/components/common/BottomNav.vue'
 import Loading from '@/components/common/Loading.vue'
 import ConnectionStatus from '@/components/common/ConnectionStatus.vue'
 import { useFamilyStore } from '@/stores/family'
-import type { Member } from '@/stores/family'
+import { useBeastStore } from '@/stores/beast'
 import { connectSocket, getSocket } from '@/services/socket'
 
 const familyStore = useFamilyStore()
+const beastStore = useBeastStore()
 const isLoading = ref(true)
 const isConnected = ref(false)
 const isReconnecting = ref(false)
@@ -42,6 +43,15 @@ const hasFamilyInfo = computed(() => {
 })
 
 let socket: ReturnType<typeof connectSocket> | null = null
+
+// 类型映射：后端中文拼音 -> 前端英文
+const typeMap: Record<string, string> = {
+  qinglong: 'dragon',
+  zhuque: 'phoenix',
+  baihu: 'tiger',
+  xuanwu: 'turtle',
+  qilin: 'kirin'
+}
 
 // 尝试从本地存储恢复家庭信息
 const restoreFromStorage = () => {
@@ -107,8 +117,29 @@ const setupSocketEvents = (sock: ReturnType<typeof connectSocket>) => {
   })
 
   // 监听同步数据
-  sock.on('SYNC_DATA', (data: { payload: { members: Member[] } }) => {
-    familyStore.syncMembers(data.payload.members)
+  sock.on('SYNC_DATA', (data: { payload: { members: any[]; beasts: any[] } }) => {
+    // 同步成员数据
+    const members = data.payload.members.map(m => ({
+      id: m.member_id,
+      name: m.name,
+      points: m.points || 0,
+      beastId: m.beast_id || null,
+      beastType: m.beast_type || null,
+      isOnline: m.status === 'online'
+    }))
+    familyStore.syncMembers(members)
+
+    // 同步神兽数据
+    const beasts = data.payload.beasts.map(b => ({
+      id: b.beast_id,
+      memberId: b.member_id,
+      type: typeMap[b.beast_type] || b.beast_type,
+      stage: b.stage,
+      stats: { hp: b.hp, atk: b.atk, def: b.def, spd: b.spd },
+      skills: b.unlocked_skills || [],
+      growthPoints: b.growth_points || 0
+    }))
+    beastStore.syncBeasts(beasts)
   })
 }
 
@@ -142,6 +173,11 @@ const handleBroadcast = (event: string, data: any) => {
       break
     case 'BEAST_STAGE_UP':
       // 神兽成长
+      beastStore.updateBeastStage(data.memberId, data.newStage)
+      break
+    case 'BEAST_CREATED':
+      // 新神兽创建，重新同步
+      if (socket) requestSync(socket)
       break
   }
 }

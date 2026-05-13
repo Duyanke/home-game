@@ -1,7 +1,7 @@
 import { v4 as uuidv4 } from 'uuid';
 import { queryOne, queryAll, runSql } from '../db/database';
 
-export type TaskStatus = 'pending' | 'in_progress' | 'pending_confirmation' | 'completed';
+export type TaskStatus = 'pending' | 'in_progress' | 'pending_confirmation' | 'completed' | 'confirmed';
 
 export interface Task {
   task_id: string;

@@ -1,7 +1,8 @@
 // server/src/game/battle-engine.ts
 
 import { BattleBeastState, BattleAction, BattleResult, clearRoundEffects, recoverEp } from './battle-state';
-import { BEAST_ELEMENTS, ELEMENT_COUNTER, BEAST_SKILLS, SkillDefinition, getPowerBonusForStage } from './constants';
+import { BEAST_ELEMENTS, ELEMENT_COUNTER, BEAST_SKILLS, SkillDefinition } from './constants';
+import { getPowerBonusForStage } from './growth';
 import { Beast, getBeastById, getBeastByMember } from '../models/beast';
 import { getMemberById } from '../models/member';
 

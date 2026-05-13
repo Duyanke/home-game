@@ -48,7 +48,7 @@ import TaskCompleteEffect from '@/components/effects/TaskCompleteEffect.vue'
 import { useTaskStore } from '@/stores/task'
 import type { Task } from '@/stores/task'
 import { useFamilyStore } from '@/stores/family'
-import { sendMessage, getSocket } from '@/services/socket'
+import { getSocket } from '@/services/socket'
 
 const taskStore = useTaskStore()
 const familyStore = useFamilyStore()
@@ -68,20 +68,68 @@ const confirmTask = (taskId: string) => {
   const task = taskStore.tasks.find(t => t.id === taskId)
   if (task) {
     earnedPoints.value = task.points || 50
-    sendMessage('CONFIRM_TASK', { taskId })
+    taskStore.confirmTask(taskId)
   }
 }
 
 onMounted(() => {
   const socket = getSocket()
   if (socket) {
-    socket.on('TASK_SYNC', (data: { payload: { tasks: Task[] } }) => {
-      taskStore.syncTasks(data.payload.tasks)
+    // 监听数据同步
+    socket.on('SYNC_DATA', (data: { payload: { tasks: any[] } }) => {
+      const tasks = data.payload.tasks.map(t => ({
+        id: t.task_id,
+        name: t.name,
+        points: t.points,
+        status: t.status as Task['status'],
+        createdBy: t.creator_id,
+        claimedBy: t.executor_id,
+        confirmedBy: t.confirmed_by,
+        isCustom: t.is_custom,
+        createdAt: t.created_at
+      }))
+      taskStore.syncTasks(tasks)
     })
 
-    socket.on('TASK_CONFIRMED', (data: { payload: { taskId: string; points: number } }) => {
-      earnedPoints.value = data.payload.points || 50
-      showCompleteEffect.value = true
+    // 监听广播事件
+    socket.on('BROADCAST', (data: { payload: { event: string; data: any } }) => {
+      const { event, data: eventData } = data.payload
+
+      if (event === 'TASK_CREATED') {
+        const task: Task = {
+          id: eventData.id || eventData.task_id,
+          name: eventData.name,
+          points: eventData.points,
+          status: eventData.status || 'pending',
+          createdBy: eventData.createdBy || eventData.creator_id,
+          claimedBy: eventData.claimedBy || eventData.executor_id,
+          confirmedBy: eventData.confirmedBy || eventData.confirmed_by,
+          isCustom: eventData.isCustom ?? eventData.is_custom ?? true,
+          createdAt: eventData.createdAt || eventData.created_at
+        }
+        taskStore.addTask(task)
+      }
+
+      if (event === 'TASK_UPDATED') {
+        const task: Task = {
+          id: eventData.id || eventData.task_id,
+          name: eventData.name,
+          points: eventData.points,
+          status: eventData.status,
+          createdBy: eventData.createdBy || eventData.creator_id,
+          claimedBy: eventData.claimedBy || eventData.executor_id,
+          confirmedBy: eventData.confirmedBy || eventData.confirmed_by,
+          isCustom: eventData.isCustom ?? eventData.is_custom ?? true,
+          createdAt: eventData.createdAt || eventData.created_at
+        }
+        taskStore.updateTask(task)
+
+        // 如果任务确认完成，显示效果
+        if (eventData.status === 'confirmed' && eventData.executor_id === familyStore.memberId) {
+          earnedPoints.value = eventData.points || 50
+          showCompleteEffect.value = true
+        }
+      }
     })
   }
 })
@@ -89,8 +137,8 @@ onMounted(() => {
 onUnmounted(() => {
   const socket = getSocket()
   if (socket) {
-    socket.off('TASK_SYNC')
-    socket.off('TASK_CONFIRMED')
+    socket.off('SYNC_DATA')
+    socket.off('BROADCAST')
   }
 })
 </script>

@@ -47,7 +47,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, onMounted, onUnmounted } from 'vue'
+import { ref, computed, onMounted, onUnmounted, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import BackHeader from '@/components/common/BackHeader.vue'
 import BeastAvatar from '@/components/common/BeastAvatar.vue'
@@ -66,6 +66,7 @@ const familyStore = useFamilyStore()
 const showChangeWarning = ref(false)
 const showEvolution = ref(false)
 const evolutionData = ref({ stageName: '', newSkill: '' })
+const isLoading = ref(true)
 
 const beastNames: Record<string, string> = {
   dragon: '青龙',
@@ -115,7 +116,27 @@ const goToSelect = () => {
   router.push('/beast/select')
 }
 
+// 监听神兽状态，如果没有神兽则跳转到选择页
+watch(
+  () => beastStore.hasBeast,
+  (hasBeast) => {
+    isLoading.value = false
+    if (!hasBeast && familyStore.memberId) {
+      router.replace('/beast/select')
+    }
+  },
+  { immediate: true }
+)
+
 onMounted(() => {
+  // 等待数据同步
+  setTimeout(() => {
+    isLoading.value = false
+    if (!beastStore.hasBeast) {
+      router.replace('/beast/select')
+    }
+  }, 1000)
+
   const socket = getSocket()
   if (socket) {
     socket.on('BEAST_STAGE_UP', (data: { payload: { memberId: string; newStage: number; newSkills?: string[] } }) => {
@@ -127,6 +148,18 @@ onMounted(() => {
         showEvolution.value = true
       }
     })
+
+    // 监听神兽创建
+    socket.on('BEAST_CREATED', (data: { payload: { memberId: string; beastType: string } }) => {
+      if (data.payload.memberId === familyStore.memberId) {
+        // 神兽已创建，刷新数据
+        socket.emit('SYNC_REQUEST', {
+          type: 'SYNC_REQUEST',
+          payload: { familyId: familyStore.familyId },
+          timestamp: Date.now()
+        })
+      }
+    })
   }
 })
 
@@ -134,6 +167,7 @@ onUnmounted(() => {
   const socket = getSocket()
   if (socket) {
     socket.off('BEAST_STAGE_UP')
+    socket.off('BEAST_CREATED')
   }
 })
 </script>

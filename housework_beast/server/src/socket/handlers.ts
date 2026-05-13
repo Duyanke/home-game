@@ -53,7 +53,8 @@ import {
   endRound
 } from '../game/battle-engine';
 import { determineOrder, BattleBeastState, BattleResult } from '../game/battle-state';
-import { addPointsAndCheckGrowth, DUEL_REWARDS } from '../game/growth';
+import { addPointsAndCheckGrowth } from '../game/growth';
+import { DUEL_REWARDS } from '../game/constants';
 import { DuelResult } from '../models/duel';
 
 // 存储成员与 Socket 的映射
@@ -74,14 +75,29 @@ export function registerSocketHandlers(io: Server): void {
       handleSyncRequest(socket, msg);
     });
 
+    // SELECT_BEAST: 选择神兽
+    socket.on('SELECT_BEAST', (msg: SocketMessage<{ beastType: string; memberId: string }>) => {
+      handleSelectBeast(io, socket, msg);
+    });
+
     // TASK_CREATE: 创建任务
     socket.on('TASK_CREATE', (msg: SocketMessage<TaskCreatePayload>) => {
       handleTaskCreate(io, socket, msg);
     });
 
-    // TASK_UPDATE: 更新任务状态
-    socket.on('TASK_UPDATE', (msg: SocketMessage<TaskUpdatePayload>) => {
-      handleTaskUpdate(io, socket, msg);
+    // TASK_CLAIM: 领取任务
+    socket.on('TASK_CLAIM', (msg: SocketMessage<{ taskId: string; memberId: string }>) => {
+      handleTaskClaim(io, socket, msg);
+    });
+
+    // TASK_COMPLETE: 完成任务
+    socket.on('TASK_COMPLETE', (msg: SocketMessage<{ taskId: string; memberId: string }>) => {
+      handleTaskComplete(io, socket, msg);
+    });
+
+    // CONFIRM_TASK: 确认任务
+    socket.on('CONFIRM_TASK', (msg: SocketMessage<{ taskId: string; memberId: string }>) => {
+      handleTaskConfirm(io, socket, msg);
     });
 
     // DUEL_INVITE: 发起决斗邀请
@@ -192,11 +208,37 @@ function handleSyncRequest(socket: Socket, msg: SocketMessage<SyncRequestPayload
 
 // TASK_CREATE 处理：创建任务
 function handleTaskCreate(io: Server, socket: Socket, msg: SocketMessage<TaskCreatePayload>): void {
-  const { familyId, name, points, creatorId, isCustom } = msg.payload;
+  const memberId = socketMemberMap.get(socket.id);
+  if (!memberId) {
+    socket.emit('ERROR', { type: 'ERROR', payload: { message: '未找到成员信息' }, timestamp: Date.now() });
+    return;
+  }
 
-  const task = createTask(familyId, name, points, creatorId, isCustom);
+  const member = getMemberById(memberId);
+  if (!member) {
+    socket.emit('ERROR', { type: 'ERROR', payload: { message: '成员不存在' }, timestamp: Date.now() });
+    return;
+  }
 
-  broadcastToFamily(io, familyId, 'TASK_CREATED', task);
+  const { name, points, isCustom } = msg.payload;
+  const familyId = member.family_id;
+
+  const task = createTask(familyId, name, points, memberId, isCustom);
+
+  // 转换为前端格式
+  const frontendTask = {
+    id: task.task_id,
+    name: task.name,
+    points: task.points,
+    status: task.status,
+    createdBy: task.creator_id,
+    claimedBy: task.executor_id,
+    confirmedBy: task.confirmed_by,
+    isCustom: task.is_custom,
+    createdAt: task.created_at
+  };
+
+  broadcastToFamily(io, familyId, 'TASK_CREATED', frontendTask);
 }
 
 // TASK_UPDATE 处理：更新任务状态
@@ -396,6 +438,140 @@ function handleMemberUpdate(io: Server, socket: Socket, msg: SocketMessage<Membe
       memberId,
       status
     });
+  }
+}
+
+// SELECT_BEAST 处理：选择神兽
+function handleSelectBeast(io: Server, socket: Socket, msg: SocketMessage<{ beastType: string; memberId: string }>): void {
+  const memberId = socketMemberMap.get(socket.id);
+  if (!memberId) {
+    socket.emit('ERROR', { type: 'ERROR', payload: { message: '未找到成员信息' }, timestamp: Date.now() });
+    return;
+  }
+
+  const member = getMemberById(memberId);
+  if (!member) {
+    socket.emit('ERROR', { type: 'ERROR', payload: { message: '成员不存在' }, timestamp: Date.now() });
+    return;
+  }
+
+  // 类型映射：前端英文 -> 后端中文拼音
+  const typeMap: Record<string, string> = {
+    dragon: 'qinglong',
+    phoenix: 'zhuque',
+    tiger: 'baihu',
+    turtle: 'xuanwu',
+    kirin: 'qilin'
+  };
+
+  const { beastType } = msg.payload;
+  const backendType = typeMap[beastType] || beastType;
+
+  // 检查是否已有神兽
+  const existingBeast = getBeastByMember(memberId);
+  if (existingBeast) {
+    socket.emit('ERROR', { type: 'ERROR', payload: { message: '你已经选择了神兽' }, timestamp: Date.now() });
+    return;
+  }
+
+  // 创建神兽
+  const beast = createBeast(memberId, backendType as any);
+
+  // 发送确认
+  socket.emit('BEAST_SELECTED', {
+    type: 'BEAST_SELECTED',
+    payload: {
+      success: true,
+      beast: {
+        id: beast.beast_id,
+        memberId: beast.member_id,
+        type: beastType, // 返回前端使用的英文类型
+        stage: beast.stage,
+        stats: { hp: beast.hp, atk: beast.atk, def: beast.def, spd: beast.spd },
+        skills: beast.unlocked_skills,
+        growthPoints: 0
+      }
+    },
+    timestamp: Date.now()
+  });
+
+  // 广播神兽创建
+  broadcastToFamily(io, member.family_id, 'BEAST_CREATED', {
+    memberId,
+    beastType,
+    beastId: beast.beast_id
+  });
+}
+
+// TASK_CLAIM 处理：领取任务
+function handleTaskClaim(io: Server, socket: Socket, msg: SocketMessage<{ taskId: string; memberId: string }>): void {
+  const memberId = socketMemberMap.get(socket.id);
+  if (!memberId) return;
+
+  const { taskId } = msg.payload;
+  const task = getTaskById(taskId);
+  if (!task) return;
+
+  updateTaskStatus(taskId, 'in_progress', memberId);
+  const updatedTask = getTaskById(taskId);
+
+  if (updatedTask) {
+    broadcastToFamily(io, task.family_id, 'TASK_UPDATED', updatedTask);
+  }
+}
+
+// TASK_COMPLETE 处理：完成任务
+function handleTaskComplete(io: Server, socket: Socket, msg: SocketMessage<{ taskId: string; memberId: string }>): void {
+  const memberId = socketMemberMap.get(socket.id);
+  if (!memberId) return;
+
+  const { taskId } = msg.payload;
+  const task = getTaskById(taskId);
+  if (!task) return;
+
+  // 标记为已完成
+  updateTaskStatus(taskId, 'completed');
+  const updatedTask = getTaskById(taskId);
+
+  if (updatedTask) {
+    broadcastToFamily(io, task.family_id, 'TASK_UPDATED', updatedTask);
+  }
+}
+
+// CONFIRM_TASK 处理：确认任务
+function handleTaskConfirm(io: Server, socket: Socket, msg: SocketMessage<{ taskId: string; memberId: string }>): void {
+  const memberId = socketMemberMap.get(socket.id);
+  if (!memberId) return;
+
+  const { taskId } = msg.payload;
+  const task = getTaskById(taskId);
+  if (!task) return;
+
+  // 确认任务
+  updateTaskStatus(taskId, 'confirmed', undefined, memberId);
+  const updatedTask = getTaskById(taskId);
+
+  if (updatedTask && updatedTask.executor_id) {
+    // 给执行者加积分
+    const growthResult = addPointsAndCheckGrowth(updatedTask.executor_id, task.points);
+
+    // 广播任务更新
+    broadcastToFamily(io, task.family_id, 'TASK_UPDATED', updatedTask);
+
+    // 广播积分更新
+    broadcastToFamily(io, task.family_id, 'MEMBER_POINTS_UPDATED', {
+      memberId: updatedTask.executor_id,
+      newPoints: growthResult.newTotalPoints
+    });
+
+    // 如果阶段提升
+    if (growthResult.stageChanged) {
+      broadcastToFamily(io, task.family_id, 'BEAST_STAGE_UP', {
+        memberId: updatedTask.executor_id,
+        newStage: growthResult.newStage,
+        newSkills: growthResult.newSkills
+      });
+    }
   }
 }
 
