@@ -38,16 +38,24 @@ export function sendMessage<T>(type: string, payload: T): void {
 
 export function setupSocketErrorHandlers(
   socket: Socket,
-  onError: (message: string) => void,
-  onDisconnect: () => void
+  callbacks: {
+    onError: (message: string) => void
+    onDisconnect: () => void
+    onReconnect?: () => void
+  }
 ): void {
-  socket.on('connect_error', () => onError('连接服务器失败'))
+  socket.on('connect_error', () => callbacks.onError('连接服务器失败'))
   socket.on('disconnect', (reason) => {
     if (reason === 'io server disconnect') {
-      onError('服务器已断开连接')
+      callbacks.onError('服务器已断开连接')
     } else {
-      onDisconnect()
+      callbacks.onDisconnect()
     }
   })
-  socket.on('ERROR', (msg) => onError(msg.payload.message))
+  socket.on('reconnect', () => {
+    if (callbacks.onReconnect) {
+      callbacks.onReconnect()
+    }
+  })
+  socket.on('ERROR', (msg: { payload: { message: string } }) => callbacks.onError(msg.payload.message))
 }

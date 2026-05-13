@@ -14,24 +14,29 @@
       </div>
       <button
         class="confirm-btn"
-        :disabled="!selectedType"
+        :disabled="!selectedType || isConfirming"
         @click="confirmSelect"
       >
-        确认选择
+        {{ isConfirming ? '确认中...' : '确认选择' }}
       </button>
     </div>
+    <Loading :visible="isConfirming" text="正在绑定神兽..." />
   </div>
 </template>
 
 <script setup lang="ts">
-import { ref } from 'vue'
+import { ref, onMounted, onUnmounted } from 'vue'
 import { useRouter } from 'vue-router'
 import BackHeader from '@/components/common/BackHeader.vue'
 import BeastCard from '@/components/common/BeastCard.vue'
-import { sendMessage } from '@/services/socket'
+import Loading from '@/components/common/Loading.vue'
+import { useToastStore } from '@/stores/toast'
+import { sendMessage, getSocket } from '@/services/socket'
 
 const router = useRouter()
+const toast = useToastStore()
 const selectedType = ref<string | null>(null)
+const isConfirming = ref(false)
 
 const beastTypes = [
   { type: 'dragon' },
@@ -46,10 +51,35 @@ const selectBeast = (type: string) => {
 }
 
 const confirmSelect = () => {
-  if (!selectedType.value) return
+  if (!selectedType.value) {
+    toast.warning('请先选择一只神兽')
+    return
+  }
+  isConfirming.value = true
   sendMessage('SELECT_BEAST', { beastType: selectedType.value })
-  router.push('/beast')
 }
+
+onMounted(() => {
+  const socket = getSocket()
+  if (socket) {
+    socket.on('BEAST_SELECTED', (data: { payload: { success: boolean } }) => {
+      isConfirming.value = false
+      if (data.payload.success) {
+        toast.success('神兽选择成功!')
+        router.push('/beast')
+      } else {
+        toast.error('选择失败，请重试')
+      }
+    })
+  }
+})
+
+onUnmounted(() => {
+  const socket = getSocket()
+  if (socket) {
+    socket.off('BEAST_SELECTED')
+  }
+})
 </script>
 
 <style scoped lang="scss">

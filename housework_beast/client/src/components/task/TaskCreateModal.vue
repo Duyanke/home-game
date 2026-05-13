@@ -58,6 +58,8 @@
 <script setup lang="ts">
 import { ref } from 'vue'
 import { useTaskStore } from '@/stores/task'
+import { useToastStore } from '@/stores/toast'
+import { validateTaskName, validateTaskPoints } from '@/utils/validators'
 
 const emit = defineEmits<{
   close: []
@@ -65,13 +67,30 @@ const emit = defineEmits<{
 }>()
 
 const taskStore = useTaskStore()
+const toast = useToastStore()
 const taskName = ref('')
 const taskPoints = ref(10)
 const isCustom = ref(true)
+const isSubmitting = ref(false)
 
 const createTask = () => {
-  if (!taskName.value || !taskPoints.value) return
+  // 验证任务名称
+  const nameResult = validateTaskName(taskName.value)
+  if (!nameResult.valid) {
+    toast.error(nameResult.errors[0])
+    return
+  }
+
+  // 验证积分
+  const pointsResult = validateTaskPoints(taskPoints.value)
+  if (!pointsResult.valid) {
+    toast.error(pointsResult.errors[0])
+    return
+  }
+
+  isSubmitting.value = true
   taskStore.createTask(taskName.value, taskPoints.value, isCustom.value)
+  toast.success('任务创建成功')
   emit('created')
   emit('close')
 }
