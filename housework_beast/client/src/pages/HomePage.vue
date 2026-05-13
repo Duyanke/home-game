@@ -67,29 +67,36 @@ const restoreFromStorage = () => {
 
 // 欢迎组件成功回调
 const onWelcomeSuccess = () => {
-  // Socket 已经在 WelcomeModal 中连接，直接使用
+  // Socket 已经在 WelcomeModal 中连接，家庭信息已保存
+  // 立即完成加载，不再等待
+  isLoading.value = false
+  isConnected.value = true
+
   socket = getSocket()
-
-  if (socket && socket.connected) {
-    // 已连接，立即完成加载
-    isConnected.value = true
-    isLoading.value = false
-
+  if (socket) {
     // 设置事件监听
     setupSocketEvents(socket)
 
-    // 请求同步数据
-    requestSync(socket)
-  } else if (socket) {
-    // 等待连接
-    isLoading.value = true
-    setupSocketEvents(socket)
+    // 如果已连接，立即请求同步
+    if (socket.connected) {
+      requestSync(socket)
+    }
   }
 }
 
 // 设置 Socket 事件监听
 const setupSocketEvents = (sock: ReturnType<typeof connectSocket>) => {
-  // 注意：connect 事件在 initSocketConnection 中单独处理（需要发送 REJOIN）
+  // 处理连接成功
+  sock.on('connect', () => {
+    isConnected.value = true
+    isReconnecting.value = false
+    isLoading.value = false
+
+    // 发送 REJOIN 恢复登录状态
+    if (familyStore.memberId && familyStore.familyId) {
+      rejoinFamily(familyStore.memberId, familyStore.familyId)
+    }
+  })
 
   sock.on('disconnect', () => {
     isConnected.value = false
@@ -190,21 +197,21 @@ const handleBroadcast = (event: string, data: any) => {
 
 // 初始化 Socket 连接（用于恢复存储数据的情况）
 const initSocketConnection = () => {
-  socket = connectSocket('http://localhost:3000')
+  socket = getSocket()
 
-  setupSocketEvents(socket)
-
-  // 在连接时发送 REJOIN 恢复登录状态
-  socket.on('connect', () => {
+  // 如果 socket 已存在且已连接，直接完成加载
+  if (socket && socket.connected) {
     isConnected.value = true
-    isReconnecting.value = false
     isLoading.value = false
+    rejoinFamily(familyStore.memberId, familyStore.familyId)
+    requestSync(socket)
+  } else {
+    // 需要建立新连接
+    socket = connectSocket('http://localhost:3000')
+  }
 
-    // 如果有保存的家庭信息，发送 REJOIN
-    if (familyStore.memberId && familyStore.familyId) {
-      rejoinFamily(familyStore.memberId, familyStore.familyId)
-    }
-  })
+  // 设置事件监听（无论 socket 状态）
+  setupSocketEvents(socket)
 
   // 监听网络状态
   window.addEventListener('online', () => {
