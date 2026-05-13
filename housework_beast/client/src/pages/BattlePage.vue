@@ -29,15 +29,18 @@
       />
     </div>
 
-    <div class="modal-overlay" v-if="battleEnded">
-      <div class="modal-content">
-        <h3 class="result-title" :class="isWinner ? 'win' : 'lose'">
-          {{ isWinner ? '胜利!' : '失败...' }}
-        </h3>
-        <p class="result-message">战斗结束</p>
-        <button class="back-btn" @click="goBack">返回大厅</button>
-      </div>
-    </div>
+    <SkillEffect
+      :active="showSkillEffect"
+      :skill-type="skillEffectData.type"
+      :skill-name="skillEffectData.name"
+      @complete="showSkillEffect = false"
+    />
+
+    <VictoryEffect
+      :active="battleEnded"
+      :is-victory="isWinner"
+      @complete="goBack"
+    />
   </div>
 </template>
 
@@ -48,6 +51,8 @@ import BackHeader from '@/components/common/BackHeader.vue'
 import BattleArena from '@/components/duel/BattleArena.vue'
 import BattleLog from '@/components/duel/BattleLog.vue'
 import SkillButtons from '@/components/duel/SkillButtons.vue'
+import SkillEffect from '@/components/effects/SkillEffect.vue'
+import VictoryEffect from '@/components/effects/VictoryEffect.vue'
 import { useFamilyStore } from '@/stores/family'
 import { useBeastStore } from '@/stores/beast'
 import { sendMessage, getSocket } from '@/services/socket'
@@ -78,6 +83,9 @@ const battleLogs = ref<Array<{ round: number; type: 'attack' | 'skill' | 'defend
 const battleEnded = ref(false)
 const isWinner = ref(false)
 
+const showSkillEffect = ref(false)
+const skillEffectData = ref({ type: 'attack' as 'attack' | 'skill' | 'defend' | 'heal', name: '攻击' })
+
 const handleAction = (actionType: string) => {
   sendMessage('DUEL_ACTION', { duelId: duelId.value, action: actionType })
 }
@@ -103,8 +111,15 @@ onMounted(() => {
     currentRound.value = state.round
   })
 
-  socket.on('DUEL_ACTION_RESULT', (data) => {
+  socket.on('DUEL_ACTION_RESULT', (data: { payload: { actor: string; targetDamage?: number; actionType: 'attack' | 'skill' | 'defend' | 'heal'; actorName: string; skillName?: string } }) => {
     const result = data.payload
+
+    // 触发技能动画
+    skillEffectData.value = {
+      type: result.actionType,
+      name: result.skillName || (result.actionType === 'attack' ? '攻击' : result.actionType === 'defend' ? '防御' : '技能')
+    }
+    showSkillEffect.value = true
 
     if (result.actor === familyStore.memberId) {
       if (result.targetDamage) {

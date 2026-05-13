@@ -7,6 +7,7 @@
           :beast-type="beastStore.myBeastType || 'dragon'"
           :stage="beastStore.myBeastStage"
           :show-stage="true"
+          :is-hit="false"
         />
       </div>
       <GrowthProgress
@@ -34,11 +35,19 @@
         </div>
       </div>
     </div>
+
+    <EvolutionEffect
+      :active="showEvolution"
+      :element="element"
+      :stage-name="evolutionData.stageName"
+      :new-skill="evolutionData.newSkill"
+      @complete="showEvolution = false"
+    />
   </div>
 </template>
 
 <script setup lang="ts">
-import { ref, computed } from 'vue'
+import { ref, computed, onMounted, onUnmounted } from 'vue'
 import { useRouter } from 'vue-router'
 import BackHeader from '@/components/common/BackHeader.vue'
 import BeastAvatar from '@/components/common/BeastAvatar.vue'
@@ -46,11 +55,17 @@ import GrowthProgress from '@/components/beast/GrowthProgress.vue'
 import BeastStats from '@/components/beast/BeastStats.vue'
 import SkillList from '@/components/beast/SkillList.vue'
 import BottomNav from '@/components/common/BottomNav.vue'
+import EvolutionEffect from '@/components/effects/EvolutionEffect.vue'
 import { useBeastStore } from '@/stores/beast'
+import { useFamilyStore } from '@/stores/family'
+import { getSocket } from '@/services/socket'
 
 const router = useRouter()
 const beastStore = useBeastStore()
+const familyStore = useFamilyStore()
 const showChangeWarning = ref(false)
+const showEvolution = ref(false)
+const evolutionData = ref({ stageName: '', newSkill: '' })
 
 const beastNames: Record<string, string> = {
   dragon: '青龙',
@@ -60,10 +75,27 @@ const beastNames: Record<string, string> = {
   kirin: '麒麟'
 }
 
+const elementMap: Record<string, string> = {
+  dragon: 'wood',
+  phoenix: 'fire',
+  tiger: 'metal',
+  turtle: 'water',
+  kirin: 'light'
+}
+
+const stageNames: Record<number, string> = {
+  1: '幼年期',
+  2: '成年期',
+  3: '进化期',
+  4: '神圣期'
+}
+
 const pageTitle = computed(() => {
   if (!beastStore.myBeastType) return '选择神兽'
   return beastNames[beastStore.myBeastType] || '神兽'
 })
+
+const element = computed(() => elementMap[beastStore.myBeastType || 'dragon'] || 'wood')
 
 const defaultBaseStats: Record<string, { hp: number; atk: number; def: number; spd: number }> = {
   dragon: { hp: 100, atk: 12, def: 8, spd: 10 },
@@ -82,6 +114,28 @@ const goToSelect = () => {
   showChangeWarning.value = false
   router.push('/beast/select')
 }
+
+onMounted(() => {
+  const socket = getSocket()
+  if (socket) {
+    socket.on('BEAST_STAGE_UP', (data: { payload: { memberId: string; newStage: number; newSkills?: string[] } }) => {
+      if (data.payload.memberId === familyStore.memberId) {
+        evolutionData.value = {
+          stageName: stageNames[data.payload.newStage] || '成年期',
+          newSkill: data.payload.newSkills?.[0] || ''
+        }
+        showEvolution.value = true
+      }
+    })
+  }
+})
+
+onUnmounted(() => {
+  const socket = getSocket()
+  if (socket) {
+    socket.off('BEAST_STAGE_UP')
+  }
+})
 </script>
 
 <style scoped lang="scss">

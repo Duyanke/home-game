@@ -29,23 +29,32 @@
       @close="showModal = false"
       @created="showModal = false"
     />
+    <TaskCompleteEffect
+      :active="showCompleteEffect"
+      :points="earnedPoints"
+      @complete="showCompleteEffect = false"
+    />
   </div>
 </template>
 
 <script setup lang="ts">
-import { ref, onMounted } from 'vue'
+import { ref, onMounted, onUnmounted } from 'vue'
 import BackHeader from '@/components/common/BackHeader.vue'
 import TaskFilter from '@/components/task/TaskFilter.vue'
 import TaskItem from '@/components/common/TaskItem.vue'
 import BottomNav from '@/components/common/BottomNav.vue'
 import TaskCreateModal from '@/components/task/TaskCreateModal.vue'
+import TaskCompleteEffect from '@/components/effects/TaskCompleteEffect.vue'
 import { useTaskStore } from '@/stores/task'
+import type { Task } from '@/stores/task'
 import { useFamilyStore } from '@/stores/family'
-import { getSocket } from '@/services/socket'
+import { sendMessage, getSocket } from '@/services/socket'
 
 const taskStore = useTaskStore()
 const familyStore = useFamilyStore()
 const showModal = ref(false)
+const showCompleteEffect = ref(false)
+const earnedPoints = ref(0)
 
 const claimTask = (taskId: string) => {
   taskStore.claimTask(taskId)
@@ -56,15 +65,32 @@ const completeTask = (taskId: string) => {
 }
 
 const confirmTask = (taskId: string) => {
-  taskStore.confirmTask(taskId)
+  const task = taskStore.tasks.find(t => t.id === taskId)
+  if (task) {
+    earnedPoints.value = task.points || 50
+    sendMessage('CONFIRM_TASK', { taskId })
+  }
 }
 
 onMounted(() => {
   const socket = getSocket()
   if (socket) {
-    socket.on('TASK_SYNC', (data) => {
+    socket.on('TASK_SYNC', (data: { payload: { tasks: Task[] } }) => {
       taskStore.syncTasks(data.payload.tasks)
     })
+
+    socket.on('TASK_CONFIRMED', (data: { payload: { taskId: string; points: number } }) => {
+      earnedPoints.value = data.payload.points || 50
+      showCompleteEffect.value = true
+    })
+  }
+})
+
+onUnmounted(() => {
+  const socket = getSocket()
+  if (socket) {
+    socket.off('TASK_SYNC')
+    socket.off('TASK_CONFIRMED')
   }
 })
 </script>
