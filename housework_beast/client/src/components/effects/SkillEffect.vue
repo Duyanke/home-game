@@ -19,7 +19,7 @@ import { watch } from 'vue'
 
 const props = defineProps<{
   active: boolean
-  skillType: 'attack' | 'skill' | 'defend' | 'heal'
+  skillType: 'attack' | 'skill' | 'defend' | 'heal' | 'surrender'
   skillName: string
 }>()
 

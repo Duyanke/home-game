@@ -32,7 +32,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, onMounted } from 'vue'
+import { ref, computed, onMounted, onUnmounted } from 'vue'
 import { useRouter } from 'vue-router'
 import BackHeader from '@/components/common/BackHeader.vue'
 import OpponentCard from '@/components/duel/OpponentCard.vue'
@@ -40,11 +40,15 @@ import BottomNav from '@/components/common/BottomNav.vue'
 import Loading from '@/components/common/Loading.vue'
 import { useFamilyStore } from '@/stores/family'
 import { useBeastStore } from '@/stores/beast'
-import { sendMessage, getSocket } from '@/services/socket'
+import { useBattleStore } from '@/stores/battle'
+import { useToastStore } from '@/stores/toast'
+import { sendMessage, getSocket, rejoinFamily, registerSocketCallback, removeSocketCallback } from '@/services/socket'
 
 const router = useRouter()
 const familyStore = useFamilyStore()
 const beastStore = useBeastStore()
+const battleStore = useBattleStore()
+const toast = useToastStore()
 const isWaiting = ref(false)
 const winRecords = ref<Record<string, { wins: number; losses: number }>>({})
 const myRecord = ref<{ wins: number; losses: number; streak: number } | null>(null)
@@ -59,22 +63,52 @@ const onlineOpponents = computed(() => {
 })
 
 const startDuel = (opponentId: string) => {
-  sendMessage('START_DUEL', { opponentId })
+  console.log('[DuelPage] startDuel called, opponentId:', opponentId);
+  console.log('[DuelPage] familyStore.memberId:', familyStore.memberId);
+  console.log('[DuelPage] familyStore.familyId:', familyStore.familyId);
+
+  // 确保 socket 映射正确
+  const socket = getSocket()
+  if (socket && socket.connected && familyStore.memberId && familyStore.familyId) {
+    rejoinFamily(familyStore.memberId, familyStore.familyId)
+  }
+
+  console.log('[DuelPage] Sending DUEL_INVITE');
+  sendMessage('DUEL_INVITE', { challengerId: familyStore.memberId, defenderId: opponentId })
   isWaiting.value = true
 }
 
-onMounted(() => {
-  const socket = getSocket()
-  if (socket) {
-    socket.on('DUEL_STARTED', (data) => {
-      isWaiting.value = false
-      router.push(`/battle/${data.payload.duelId}`)
-    })
+// 决斗开始回调 - 初始化 battleStore 并路由跳转
+const onDuelStarted = (data: { payload: { duelId: string; challengerId: string; defenderId: string; challengerState: any; defenderState: any; firstActor: string; currentRound: number; waitingFor: string } }) => {
+  console.log('[DuelPage] DUEL_STARTED:', data.payload)
+  isWaiting.value = false
 
-    socket.on('DUEL_DECLINED', () => {
-      isWaiting.value = false
-    })
-  }
+  // 初始化 battleStore（确保状态在跳转前准备好）
+  battleStore.initDuel(data.payload)
+
+  router.push(`/battle/${data.payload.duelId}`)
+}
+
+// 收到决斗邀请回调
+const onDuelInviteReceived = (data: { payload: { duelId: string; challengerId: string; challengerName?: string } }) => {
+  console.log('[DuelPage] DUEL_INVITE_RECEIVED:', data.payload);
+  const challengerName = data.payload.challengerName || '对手'
+  toast.info(`${challengerName} 向你发起决斗邀请`)
+
+  // 自动接受决斗并发送 DUEL_ACCEPT
+  console.log('[DuelPage] Sending DUEL_ACCEPT, duelId:', data.payload.duelId, 'defenderId:', familyStore.memberId);
+  sendMessage('DUEL_ACCEPT', { duelId: data.payload.duelId, defenderId: familyStore.memberId })
+}
+
+onMounted(() => {
+  // 注册事件回调
+  registerSocketCallback('DUEL_STARTED', onDuelStarted)
+  registerSocketCallback('DUEL_INVITE_RECEIVED', onDuelInviteReceived)
+})
+
+onUnmounted(() => {
+  removeSocketCallback('DUEL_STARTED', onDuelStarted)
+  removeSocketCallback('DUEL_INVITE_RECEIVED', onDuelInviteReceived)
 })
 </script>
 

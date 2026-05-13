@@ -20,7 +20,7 @@
 defineProps<{
   logs: Array<{
     round: number
-    type: 'attack' | 'skill' | 'defend' | 'heal'
+    type: 'attack' | 'skill' | 'defend' | 'heal' | 'surrender'
     action: string
     damage?: number
   }>

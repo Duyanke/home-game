@@ -54,113 +54,140 @@ import SkillButtons from '@/components/duel/SkillButtons.vue'
 import SkillEffect from '@/components/effects/SkillEffect.vue'
 import VictoryEffect from '@/components/effects/VictoryEffect.vue'
 import { useFamilyStore } from '@/stores/family'
-import { useBeastStore } from '@/stores/beast'
-import { sendMessage, getSocket } from '@/services/socket'
+import { useBattleStore } from '@/stores/battle'
+import { sendMessage, getSocket, rejoinFamily, registerSocketCallback, removeSocketCallback } from '@/services/socket'
 
 const route = useRoute()
 const router = useRouter()
 const familyStore = useFamilyStore()
-const beastStore = useBeastStore()
+const battleStore = useBattleStore()
 
 const duelId = computed(() => route.params.duelId as string)
 const playerName = computed(() => familyStore.memberName)
-const playerBeast = computed(() => beastStore.myBeast)
-const playerMaxHp = computed(() => playerBeast.value?.stats.hp || 100)
+const opponentName = computed(() => battleStore.opponentName)
 
-const opponentName = ref('')
-const opponentBeast = ref<{ type: string; stage: number; stats: { hp: number }; skills: string[] } | null>(null)
-const opponentMaxHp = computed(() => opponentBeast.value?.stats.hp || 100)
+// 从 battleStore 读取状态
+const playerBeast = computed(() => ({
+  type: battleStore.myBeastType,
+  stage: battleStore.myState?.stage || 1,
+  stats: battleStore.myState ? {
+    hp: battleStore.myState.maxHp,
+    atk: battleStore.myState.atk,
+    def: battleStore.myState.def,
+    spd: battleStore.myState.spd
+  } : { hp: 100, atk: 50, def: 50, spd: 50 },
+  skills: battleStore.myState?.unlockedSkills || []
+}))
 
-const playerHp = ref(100)
-const playerEp = ref(0)
-const opponentHp = ref(100)
-const opponentEp = ref(0)
-const currentRound = ref(1)
+const opponentBeast = computed(() => ({
+  type: battleStore.opponentBeastType,
+  stage: battleStore.opponentState?.stage || 1,
+  stats: battleStore.opponentState ? {
+    hp: battleStore.opponentState.maxHp
+  } : { hp: 100 },
+  skills: battleStore.opponentState?.unlockedSkills || []
+}))
+
+const playerHp = computed(() => battleStore.myState?.currentHp || 100)
+const playerMaxHp = computed(() => battleStore.myState?.maxHp || 100)
+const playerEp = computed(() => battleStore.myState?.currentEp || 0)
+const opponentHp = computed(() => battleStore.opponentState?.currentHp || 100)
+const opponentMaxHp = computed(() => battleStore.opponentState?.maxHp || 100)
+const opponentEp = computed(() => battleStore.opponentState?.currentEp || 0)
+const currentRound = computed(() => battleStore.currentRound || 1)
 
 const playerIsHit = ref(false)
 const opponentIsHit = ref(false)
-const battleLogs = ref<Array<{ round: number; type: 'attack' | 'skill' | 'defend' | 'heal'; action: string; damage?: number }>>([])
-const battleEnded = ref(false)
-const isWinner = ref(false)
-
+const battleLogs = ref<Array<{ round: number; type: 'attack' | 'skill' | 'defend' | 'heal' | 'surrender'; action: string; damage?: number }>>([])
 const showSkillEffect = ref(false)
-const skillEffectData = ref({ type: 'attack' as 'attack' | 'skill' | 'defend' | 'heal', name: '攻击' })
+const skillEffectData = ref({ type: 'attack' as 'attack' | 'skill' | 'defend' | 'heal' | 'surrender', name: '攻击' })
+
+const battleEnded = computed(() => battleStore.battleEnded)
+const isWinner = computed(() => battleStore.winnerId === familyStore.memberId)
 
 const handleAction = (actionType: string) => {
-  sendMessage('DUEL_ACTION', { duelId: duelId.value, action: actionType })
+  console.log('[BattlePage] handleAction:', actionType)
+  sendMessage('DUEL_ACTION', {
+    duelId: duelId.value,
+    memberId: familyStore.memberId,
+    action: actionType
+  })
 }
 
 const handleSkill = (skillId: string) => {
-  sendMessage('DUEL_ACTION', { duelId: duelId.value, action: 'skill', skillId })
+  console.log('[BattlePage] handleSkill:', skillId)
+  sendMessage('DUEL_ACTION', {
+    duelId: duelId.value,
+    memberId: familyStore.memberId,
+    action: 'skill',
+    skillId
+  })
 }
 
 const goBack = () => {
+  battleStore.clearDuel()
   router.push('/duel')
 }
 
+// 页面特定的 DUEL_ACTION_RESULT 回调 - 用于触发动画和日志
+
+const onDuelActionResult = (data: { payload: { duelId: string; action: { actor: string; actionType: 'attack' | 'skill' | 'defend' | 'surrender'; damage?: number; targetHp?: number; skillId?: string }; actor: string } }) => {
+  const result = data.payload.action
+  const actorMemberId = data.payload.actor
+
+  // 获取行动者名称
+  const actorName = actorMemberId === familyStore.memberId ? familyStore.memberName :
+    familyStore.members.find(m => m.id === actorMemberId)?.name || '对手'
+
+  // 触发技能动画
+  skillEffectData.value = {
+    type: result.actionType,
+    name: result.actionType === 'attack' ? '攻击' : result.actionType === 'defend' ? '防御' : result.skillId || '技能'
+  }
+  showSkillEffect.value = true
+
+  // 触发受击动画
+  if (result.actor === 'challenger') {
+    if (result.damage) {
+      opponentIsHit.value = true
+      setTimeout(() => opponentIsHit.value = false, 500)
+    }
+  } else {
+    if (result.damage) {
+      playerIsHit.value = true
+      setTimeout(() => playerIsHit.value = false, 500)
+    }
+  }
+
+  // 添加战斗日志
+  battleLogs.value.push({
+    round: currentRound.value,
+    type: result.actionType,
+    action: actorName,
+    damage: result.damage
+  })
+}
+
 onMounted(() => {
+  console.log('[BattlePage] onMounted, duelId:', duelId.value)
+  console.log('[BattlePage] battleStore state:', {
+    myState: battleStore.myState,
+    opponentState: battleStore.opponentState,
+    currentRound: battleStore.currentRound
+  })
+
+  // 确保 socket 映射正确
   const socket = getSocket()
-  if (!socket) return
+  if (socket && socket.connected && familyStore.memberId && familyStore.familyId) {
+    rejoinFamily(familyStore.memberId, familyStore.familyId)
+  }
 
-  socket.on('DUEL_STATE', (data) => {
-    const state = data.payload
-    playerHp.value = state.myHp
-    playerEp.value = state.myEp
-    opponentHp.value = state.opponentHp
-    opponentEp.value = state.opponentEp
-    currentRound.value = state.round
-  })
-
-  socket.on('DUEL_ACTION_RESULT', (data: { payload: { actor: string; targetDamage?: number; actionType: 'attack' | 'skill' | 'defend' | 'heal'; actorName: string; skillName?: string } }) => {
-    const result = data.payload
-
-    // 触发技能动画
-    skillEffectData.value = {
-      type: result.actionType,
-      name: result.skillName || (result.actionType === 'attack' ? '攻击' : result.actionType === 'defend' ? '防御' : '技能')
-    }
-    showSkillEffect.value = true
-
-    if (result.actor === familyStore.memberId) {
-      if (result.targetDamage) {
-        opponentIsHit.value = true
-        setTimeout(() => opponentIsHit.value = false, 500)
-      }
-    } else {
-      if (result.targetDamage) {
-        playerIsHit.value = true
-        setTimeout(() => playerIsHit.value = false, 500)
-      }
-    }
-
-    battleLogs.value.push({
-      round: currentRound.value,
-      type: result.actionType,
-      action: result.actorName,
-      damage: result.targetDamage
-    })
-  })
-
-  socket.on('ROUND_ENDED', (data) => {
-    currentRound.value = data.payload.round
-    playerEp.value = data.payload.myEp
-    opponentEp.value = data.payload.opponentEp
-  })
-
-  socket.on('DUEL_ENDED', (data) => {
-    battleEnded.value = true
-    isWinner.value = data.payload.winnerId === familyStore.memberId
-  })
+  // 注册页面特定的回调（动画和日志）
+  registerSocketCallback('DUEL_ACTION_RESULT', onDuelActionResult)
 })
 
 onUnmounted(() => {
-  const socket = getSocket()
-  if (socket) {
-    socket.off('DUEL_STATE')
-    socket.off('DUEL_ACTION_RESULT')
-    socket.off('ROUND_ENDED')
-    socket.off('DUEL_ENDED')
-  }
+  removeSocketCallback('DUEL_ACTION_RESULT', onDuelActionResult)
 })
 </script>
 
