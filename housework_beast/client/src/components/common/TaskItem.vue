@@ -74,18 +74,17 @@ const claimerName = computed(() => {
   return member?.name || ''
 })
 
-const canClaim = computed(() =>
-  props.task.status === 'pending' && props.task.createdBy !== props.memberId
-)
+// 任何用户都可以领取待领取状态的任务
+const canClaim = computed(() => props.task.status === 'pending')
 
+// 领取者可以点击完成自己领取的任务
 const canComplete = computed(() =>
   props.task.status === 'in_progress' && props.task.claimedBy === props.memberId
 )
 
+// 非领取者可以确认任务（其他人确认）
 const canConfirm = computed(() =>
-  props.task.status === 'completed' &&
-  props.task.claimedBy !== props.memberId &&
-  props.task.createdBy === props.memberId
+  props.task.status === 'completed' && props.task.claimedBy !== props.memberId
 )
 </script>
 

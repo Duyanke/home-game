@@ -2,26 +2,8 @@
   <div class="modal-overlay" @click.self="$emit('close')">
     <div class="modal-content">
       <h3 class="modal-title">创建新任务</h3>
-      <div class="form-group">
-        <label class="form-label">任务名称</label>
-        <input
-          type="text"
-          class="form-input"
-          v-model="taskName"
-          placeholder="输入任务名称"
-        />
-      </div>
-      <div class="form-group">
-        <label class="form-label">积分奖励</label>
-        <input
-          type="number"
-          class="form-input"
-          v-model.number="taskPoints"
-          placeholder="输入积分"
-          min="1"
-          max="100"
-        />
-      </div>
+
+      <!-- 任务类型选择 -->
       <div class="form-group">
         <label class="form-label">任务类型</label>
         <div class="radio-group">
@@ -41,11 +23,53 @@
           </button>
         </div>
       </div>
+
+      <!-- 自定义任务输入 -->
+      <div v-if="isCustom">
+        <div class="form-group">
+          <label class="form-label">任务名称</label>
+          <input
+            type="text"
+            class="form-input"
+            v-model="taskName"
+            placeholder="输入任务名称"
+          />
+        </div>
+        <div class="form-group">
+          <label class="form-label">积分奖励</label>
+          <input
+            type="number"
+            class="form-input"
+            v-model.number="taskPoints"
+            placeholder="输入积分"
+            min="1"
+            max="100"
+          />
+        </div>
+      </div>
+
+      <!-- 预设任务列表 -->
+      <div v-if="!isCustom" class="preset-list">
+        <label class="form-label">选择预设任务</label>
+        <div class="preset-grid">
+          <button
+            v-for="task in presetTasks"
+            :key="task.name"
+            class="preset-item"
+            :class="{ selected: selectedPreset?.name === task.name }"
+            @click="selectPreset(task)"
+          >
+            <span class="preset-name">{{ task.name }}</span>
+            <span class="preset-points">{{ task.points }}分</span>
+          </button>
+        </div>
+      </div>
+
       <div class="modal-actions">
         <button class="cancel-btn" @click="$emit('close')">取消</button>
         <button
           class="confirm-btn"
-          :disabled="!taskName || !taskPoints"
+          :disabled="!canCreate"
           @click="createTask"
         >
           创建
@@ -56,12 +80,13 @@
 </template>
 
 <script setup lang="ts">
-import { ref } from 'vue'
+import { ref, computed } from 'vue'
 import { useTaskStore } from '@/stores/task'
 import { useFamilyStore } from '@/stores/family'
 import { useToastStore } from '@/stores/toast'
 import { getSocket, rejoinFamily } from '@/services/socket'
 import { validateTaskName, validateTaskPoints } from '@/utils/validators'
+import { PRESET_TASKS } from '@/constants/beast-data'
 
 const emit = defineEmits<{
   close: []
@@ -75,31 +100,54 @@ const taskName = ref('')
 const taskPoints = ref(10)
 const isCustom = ref(true)
 const isSubmitting = ref(false)
+const selectedPreset = ref<{ name: string; points: number } | null>(null)
+
+const presetTasks = PRESET_TASKS
+
+const selectPreset = (task: { name: string; points: number }) => {
+  selectedPreset.value = task
+}
+
+const canCreate = computed(() => {
+  if (isCustom.value) {
+    return taskName.value && taskPoints.value > 0
+  }
+  return selectedPreset.value !== null
+})
 
 const createTask = () => {
-  // 验证任务名称
-  const nameResult = validateTaskName(taskName.value)
-  if (!nameResult.valid) {
-    toast.error(nameResult.errors[0])
+  // 根据类型获取任务数据
+  const name = isCustom.value ? taskName.value : selectedPreset.value?.name
+  const points = isCustom.value ? taskPoints.value : selectedPreset.value?.points
+
+  if (!name || !points) {
+    toast.error('请填写完整任务信息')
     return
   }
 
-  // 验证积分
-  const pointsResult = validateTaskPoints(taskPoints.value)
-  if (!pointsResult.valid) {
-    toast.error(pointsResult.errors[0])
-    return
+  // 验证任务名称（仅自定义任务需要验证）
+  if (isCustom.value) {
+    const nameResult = validateTaskName(name)
+    if (!nameResult.valid) {
+      toast.error(nameResult.errors[0])
+      return
+    }
+
+    const pointsResult = validateTaskPoints(points)
+    if (!pointsResult.valid) {
+      toast.error(pointsResult.errors[0])
+      return
+    }
   }
 
   // 确保 socket 映射正确
   const socket = getSocket()
   if (socket && socket.connected && familyStore.memberId && familyStore.familyId) {
-    // 先发送 REJOIN 确保 socket 映射正确
     rejoinFamily(familyStore.memberId, familyStore.familyId)
   }
 
   isSubmitting.value = true
-  taskStore.createTask(taskName.value, taskPoints.value, isCustom.value)
+  taskStore.createTask(name, points, isCustom.value)
   toast.success('任务创建成功')
   emit('created')
   emit('close')
@@ -122,6 +170,8 @@ const createTask = () => {
   @include card-base;
   width: 90%;
   max-width: 400px;
+  max-height: 80vh;
+  overflow-y: auto;
 }
 
 .modal-title {
@@ -171,6 +221,48 @@ const createTask = () => {
     background: $color-gold;
     color: $color-dark-base;
   }
+}
+
+.preset-list {
+  margin-bottom: 16px;
+}
+
+.preset-grid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 8px;
+}
+
+.preset-item {
+  @include card-base;
+  padding: 12px;
+  background: $color-dark-deep;
+  border: 2px solid transparent;
+  cursor: pointer;
+  text-align: left;
+  transition: all 0.2s ease;
+
+  &.selected {
+    border-color: $color-gold;
+    background: rgba($color-gold, 0.1);
+  }
+
+  &:hover {
+    background: rgba($color-gold, 0.05);
+  }
+}
+
+.preset-name {
+  display: block;
+  color: $color-text-primary;
+  font-size: 14px;
+}
+
+.preset-points {
+  display: block;
+  color: $color-gold;
+  font-size: 12px;
+  margin-top: 4px;
 }
 
 .modal-actions {
