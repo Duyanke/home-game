@@ -10,6 +10,12 @@ const routes: RouteRecordRaw[] = [
     meta: { showNav: true }
   },
   {
+    path: '/preview',
+    name: 'preview',
+    component: () => import('../pages/BeastPreview.vue'),
+    meta: { showNav: true }
+  },
+  {
     path: '/beast',
     name: 'beast',
     component: () => import('../pages/BeastPage.vue'),
